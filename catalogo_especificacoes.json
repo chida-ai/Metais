@@ -1,0 +1,21 @@
+{
+  "Portaria GM/MS 888/2021 – Potabilidade (metais)": {
+    "title": "Padrão de potabilidade da água (metais) – Anexo XX (MS 888/2021)",
+    "matrices": [
+      "A"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  },
+  "CONAMA 357/2005 – Classes (selecionar)": {
+    "title": "Classificação de corpos de água por classe/ambiente (valores por tabela da 357/2005)",
+    "matrices": [
+      "A",
+      "AS",
+      "ASalo",
+      "ASali"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  }
+}
