@@ -8,7 +8,7 @@ st.set_page_config(page_title="OPERALAB - Avaliação de Resultados", layout="wi
 
 # --- Cabeçalho com logo, título e barra ---
 LOGO_PATH = Path("assets/operalab_logo.png")
-header_cols = st.columns([0.9, 6])
+header_cols = st.columns([0.9, 3])
 with header_cols[0]:
     if LOGO_PATH.exists():
         st.image(str(LOGO_PATH), width=160)
