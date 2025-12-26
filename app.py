@@ -17,7 +17,7 @@ with header_cols[1]:
     st.markdown(
         """
         <div style="display:flex;align-items:center;gap:12px;">
-          <h1 style="margin:0;">OPERATORLAB&nbsp;&nbsp;-&nbsp;&nbsp;Avaliador de Resultados</h1>
+          <h1 style="margin:0;">OPERALAB&nbsp;&nbsp;-&nbsp;&nbsp;Avaliador de Resultados</h1>
         </div>
         <div style="height:4px;background:#00A3FF;border-radius:2px;margin-top:8px;"></div>
         <div style="margin-top:6px;opacity:0.85;">
