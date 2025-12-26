@@ -3,16 +3,16 @@ import streamlit as st
 import pandas as pd
 import io, re, json, os
 
-st.set_page_config(page_title="operalab_validador_metais", layout="wide")
+st.set_page_config(page_title="OPERATORLAB   - Avaliador de Resultados", layout="wide")
 
 # --- Header with logo (if available) ---
 logo_path = os.path.join('assets','operalab_logo.png')
 colh = st.columns([1,6])
 with colh[0]:
     if os.path.exists(logo_path):
-        st.image(logo_path, width=80)
+        st.image(logo_path, width=100)
 with colh[1]:
-    st.title("operalab_validador_metais")
+    st.title("OPERATORLAB   - Avaliador de Resultados")
     st.caption("Dissolvidos vs Totais • QC Ítrio • Duplicatas (%RPD) • Pré‑avaliação por legislação/especificação")
 
 # ----------------------
