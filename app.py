@@ -1,20 +1,15 @@
-# -*- coding: utf-8 -*-
-import streamlit as st
-import pandas as pd
-import io, re, json, os
-
-st.set_page_config(page_title="OPERATORLAB   - Avaliador de Resultados", layout="wide")
-
-# --- Header with logo (if available) ---
-import os
+# --- Cabeçalho com logo e título ---
 from pathlib import Path
 
 LOGO_PATH = Path("assets/operalab_logo.png")
 
+# Cria duas colunas: logo (esq.) e título (dir.)
 header_cols = st.columns([0.9, 6])
+
 with header_cols[0]:
     if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=300)   # ajuste o tamanho se quiser
+        # Ajuste o tamanho do logo aqui (300 se quiser bem grande; 120–160 costuma ficar equilibrado)
+        st.image(str(LOGO_PATH), width=300)
     else:
         st.caption("Adicione o arquivo do logo em: assets/operalab_logo.png")
 
@@ -22,7 +17,7 @@ with header_cols[1]:
     st.markdown(
         """
         <div style="display:flex;align-items:center;gap:12px;">
-          <h1 style="margin:0;">OPERATORLAB   - Avaliador de Resultados</h1>
+          <h1 style="margin:0;">OPERATORLAB&nbsp;&nbsp;-&nbsp;&nbsp;Avaliador de Resultados</h1>
         </div>
         <div style="height:4px;background:#00A3FF;border-radius:2px;margin-top:8px;"></div>
         <div style="margin-top:6px;opacity:0.85;">
