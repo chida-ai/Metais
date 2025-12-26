@@ -7,10 +7,10 @@ st.set_page_config(page_title="OPERATORLAB   - Avaliador de Resultados", layout=
 
 # --- Header with logo (if available) ---
 logo_path = os.path.join('assets','operalab_logo.png')
-colh = st.columns([2,10])
+colh = st.columns([1,6])
 with colh[0]:
     if os.path.exists(logo_path):
-        st.image(logo_path, width=100)
+        st.image(logo_path, width=200)
 with colh[1]:
     st.title("OPERATORLAB   - Avaliador de Resultados")
     st.caption("Dissolvidos vs Totais • QC Ítrio • Duplicatas (%RPD) • Pré‑avaliação por legislação/especificação")
