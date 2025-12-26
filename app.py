@@ -1,31 +1,36 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import io
-import re
+import io, re, json, os
 
 st.set_page_config(page_title="operalab_validador_metais", layout="wide")
-st.title("operalab_validador_metais")
-st.caption("Validador: Metais Dissolvidos vs Totais + QC Ítrio (70–130%) + Comparação de duplicatas (%RPD)")
+
+# --- Header with logo (if available) ---
+logo_path = os.path.join('assets','operalab_logo.png')
+colh = st.columns([1,6])
+with colh[0]:
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=80)
+with colh[1]:
+    st.title("operalab_validador_metais")
+    st.caption("Dissolvidos vs Totais • QC Ítrio • Duplicatas (%RPD) • Pré‑avaliação por legislação/especificação")
 
 # ----------------------
-# Estado inicial
+# Estado
 # ----------------------
 if "pasted" not in st.session_state:
     st.session_state["pasted"] = ""
 
 # ----------------------
-# Funções auxiliares
+# Auxiliares
 # ----------------------
 
 def parse_val(val_str):
-    """Retorna (valor_float, censurado_bool) a partir de strings como '0,009' ou '< 0,006'."""
     if pd.isna(val_str):
         return None, False
     s = str(val_str).strip()
     cens = s.startswith('<')
     s_clean = s.replace('<','').strip()
-    # Em pt-BR, vírgula é decimal; ponto pode ser milhar
     s_clean = s_clean.replace('.', '')
     s_clean = s_clean.replace(',', '.')
     try:
@@ -36,7 +41,6 @@ def parse_val(val_str):
 
 
 def to_mg_per_L(val, unit):
-    """Converte para mg/L quando unit é 'mg/L' ou 'µg/L'/'ug/L'. Demais unidades retornam None."""
     if val is None or pd.isna(unit):
         return None
     u = str(unit).strip().lower()
@@ -56,7 +60,6 @@ def normalize_analito(name):
 
 
 def try_read_pasted(text):
-    """Tenta ler texto colado com separador TAB, ponto-e-vírgula, vírgula ou pipe."""
     seps = ['\t', ';', ',', '|']
     for sep in seps:
         try:
@@ -68,6 +71,30 @@ def try_read_pasted(text):
     return None
 
 # ----------------------
+# Especificações — catálogo externo (JSON)
+# ----------------------
+CAT_PATH = 'catalogo_especificacoes.json'
+
+@st.cache_data(show_spinner=False)
+def load_catalog():
+    try:
+        with open(CAT_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+catalog = load_catalog()
+
+ALIASES = {
+    'Cromo': 'Crômio total',
+    'Crômio': 'Crômio total',
+    'Crômio total': 'Crômio total',
+    'Cr+6': 'Crômio hexavalente',
+    'Cr VI': 'Crômio hexavalente',
+    'Cr3+': 'Crômio trivalente',
+}
+
+# ----------------------
 # Núcleo: avaliação Dissolvido vs Total + QC Ítrio
 # ----------------------
 
@@ -76,20 +103,16 @@ def avaliar(df):
     if 'LQ - Limite Quantificação' not in df.columns:
         df['LQ - Limite Quantificação'] = None
 
-    # Parsing numérico e normalização
     df['Valor_num'], df['Censurado'] = zip(*df['Valor'].map(parse_val))
     df['Valor_mg_L'] = df.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
     df['Analito_base'] = df['Análise'].map(normalize_analito)
 
-    # Separar dissolvidos e totais (robusto a sufixos como "- ug/L")
     D = df[df['Método de Análise'].str.contains('Dissolvidos', case=False, na=False)].copy()
     T = df[df['Método de Análise'].str.contains('Totais', case=False, na=False)].copy()
 
-    # Ignorar % (Ítrio) na comparação; manter apenas mg/L
     D = D[D['Valor_mg_L'].notna()].copy()
     T = T[T['Valor_mg_L'].notna()].copy()
 
-    # Merge outer para identificar sem par; levar unidade e LQ do Total para a conversão correta
     merged = pd.merge(
         D[['Id','Analito_base','Valor_mg_L','Censurado','Unidade de Medida','LQ - Limite Quantificação']],
         T[['Id','Analito_base','Valor_mg_L','Censurado','Unidade de Medida','LQ - Limite Quantificação']],
@@ -97,7 +120,6 @@ def avaliar(df):
     )
 
     out_rows = []
-    # Acumuladores globais e por ID
     has_nc_global = False
     has_pot_global = False
     id_has_nc = {}
@@ -127,7 +149,6 @@ def avaliar(df):
             if not d_cens and not t_cens:
                 status = 'NÃO CONFORME' if d_val > t_val else 'OK'
             elif not d_cens and t_cens:
-                # Total está censurado (<LQ). Comparar Dissolvido com o LQ do Total (convertido pela UNIDADE do Total)
                 lq_num, _ = parse_val(r['LQ - Limite Quantificação_tot'])
                 lq_unit = r['Unidade de Medida_tot']
                 lq_mg = to_mg_per_L(lq_num, lq_unit)
@@ -143,7 +164,6 @@ def avaliar(df):
                 status = 'OK'
                 obs = 'Ambos <LQ'
 
-        # Atualiza flags globais e por ID
         if status == 'NÃO CONFORME':
             has_nc_global = True
             id_has_nc[idv] = True
@@ -165,7 +185,7 @@ def avaliar(df):
 
     out_df = pd.DataFrame(out_rows)
 
-    # QC ÍTRIO (recuperação em %): aceitar 70–130
+    # QC Ítrio % 70-130
     qc_df = df.copy()
     qc_df['analise_lower'] = qc_df['Análise'].str.lower()
     mask_itrio = qc_df['analise_lower'].str.contains('ítrio') | qc_df['analise_lower'].str.contains('itrio')
@@ -200,7 +220,6 @@ def avaliar(df):
         })
     qc_out = pd.DataFrame(qc_rows)
 
-    # Status global do lote
     if has_nc_global:
         lote = 'REPROVADO'
     elif has_pot_global:
@@ -208,7 +227,6 @@ def avaliar(df):
     else:
         lote = 'APROVADO'
 
-    # Status por ID: REPROVADO > ATENÇÃO > APROVADO
     id_status = {}
     ids_encontrados = pd.concat([
         merged['Id'],
@@ -223,14 +241,13 @@ def avaliar(df):
         else:
             id_status[idv] = 'APROVADO'
 
-    return out_df, qc_out, lote, id_status
+    return out_df, qc_out, lote, id_status, df
 
 # ----------------------
-# Comparação de duplicatas (%RPD)
+# Duplicatas (%RPD)
 # ----------------------
 
 def rpd(x1, x2):
-    """Relative Percent Difference (%): |x1-x2| / ((x1+x2)/2) * 100."""
     if x1 is None or x2 is None:
         return None
     if (x1 + x2) == 0:
@@ -239,7 +256,6 @@ def rpd(x1, x2):
 
 
 def preparar_numerico(df):
-    """Normaliza valores para mg/L, remove sufixo 'Dissolvido' e retorna DF pronto."""
     df = df.copy()
     df['Valor_num'], df['Censurado'] = zip(*df['Valor'].map(parse_val))
     df['Valor_mg_L'] = df.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
@@ -248,30 +264,15 @@ def preparar_numerico(df):
 
 
 def comparar_duplicatas(df_raw, amostra1, amostra2, tolerancia_pct=20.0):
-    """Compara duas amostras (Nº Amostra) e calcula %RPD por método+analito.
-    Regras:
-    - Ignora entradas em % (ex.: Ítrio).
-    - Se ambos censurados (<LQ): status = OK (comparação não aplicável), obs='Ambos <LQ'.
-    - Se um censurado e outro quantificado: status = INCONCLUSIVO, obs='Um <LQ'.
-    - Se ambos quantificados: RPD calculado; status = Conforme se RPD <= tolerância, caso contrário Não conforme.
-    """
     df = preparar_numerico(df_raw)
-
-    # Filtrar amostras selecionadas
     a1 = df[df['Nº Amostra'] == amostra1].copy()
     a2 = df[df['Nº Amostra'] == amostra2].copy()
-
-    # Remover linhas de % (ex.: Ítrio em %)
     a1 = a1[~(a1['Unidade de Medida'].astype(str).str.strip() == '%')]
     a2 = a2[~(a2['Unidade de Medida'].astype(str).str.strip() == '%')]
-
-    # Chave de comparação: Método + Analito_base
     key_cols = ['Método de Análise','Analito_base']
     cols_keep = key_cols + ['Unidade de Medida','Valor_mg_L','Censurado']
-
     a1 = a1[cols_keep].rename(columns={'Unidade de Medida':'Unidade_1','Valor_mg_L':'Valor_1','Censurado':'Cens_1'})
     a2 = a2[cols_keep].rename(columns={'Unidade de Medida':'Unidade_2','Valor_mg_L':'Valor_2','Censurado':'Cens_2'})
-
     comp = pd.merge(a1, a2, on=key_cols, how='outer')
 
     rows = []
@@ -283,11 +284,9 @@ def comparar_duplicatas(df_raw, amostra1, amostra2, tolerancia_pct=20.0):
         c1 = bool(r['Cens_1']) if pd.notna(r['Cens_1']) else False
         c2 = bool(r['Cens_2']) if pd.notna(r['Cens_2']) else False
         unidade = r['Unidade_1'] if pd.notna(r['Unidade_1']) else r['Unidade_2']
-
         status = ''
         obs = ''
         rpd_pct = None
-
         if (v1 is None) and (v2 is None):
             status = 'Sem dados'
             obs = 'Valores ausentes'
@@ -298,13 +297,8 @@ def comparar_duplicatas(df_raw, amostra1, amostra2, tolerancia_pct=20.0):
             status = 'INCONCLUSIVO'
             obs = 'Um <LQ'
         else:
-            # ambos quantificados
             rpd_pct = rpd(v1, v2)
-            if rpd_pct is None:
-                status = 'Sem dados'
-            else:
-                status = 'Conforme' if rpd_pct <= tolerancia_pct else 'Não conforme'
-
+            status = 'Conforme' if (rpd_pct is not None and rpd_pct <= tolerancia_pct) else 'Não conforme'
         rows.append({
             'Método de Análise': metodo,
             'Analito': analito,
@@ -317,136 +311,183 @@ def comparar_duplicatas(df_raw, amostra1, amostra2, tolerancia_pct=20.0):
         })
 
     out = pd.DataFrame(rows)
-    # Ordena: Não conforme > INCONCLUSIVO > OK/Conforme
     cat = pd.Categorical(out['Status'], categories=['Não conforme','INCONCLUSIVO','OK','Conforme','Sem dados'], ordered=True)
     out['__ord'] = cat
     out = out.sort_values(['__ord','Método de Análise','Analito']).drop(columns='__ord')
-
     return out
 
 # ----------------------
-# UI (Sidebar)
+# Engine: pré‑avaliação por especificação
+# ----------------------
+
+def style_status(df):
+    def color_row(s):
+        c = 'white'
+        bg = '#222'
+        if s.get('Status') == 'Não conforme':
+            bg = '#FF3B30'
+        elif s.get('Status') == 'Conforme' or s.get('Status') == 'OK':
+            bg = '#34C759'
+        elif s.get('Status') == 'INCONCLUSIVO':
+            bg = '#FFCC00'
+        return [f'background-color: {bg}; color: {c}' for _ in s]
+    return df.style.apply(color_row, axis=1)
+
+
+def aplicar_especificacao(df_num, spec_key):
+    spec = catalog.get(spec_key)
+    if not spec:
+        return pd.DataFrame(), pd.DataFrame()
+    limites = spec.get('limits_mgL', {})
+    usar_totais = spec.get('prefer_total', True)
+    df = df_num.copy()
+    df['Analito_norm'] = df['Analito_base'].map(lambda x: ALIASES.get(x, x))
+    D = df[df['Método de Análise'].str.contains('Dissolvidos', case=False, na=False)].copy()
+    T = df[df['Método de Análise'].str.contains('Totais', case=False, na=False)].copy()
+    if usar_totais:
+        base = pd.concat([T, D[~D['Analito_base'].isin(T['Analito_base'])]], ignore_index=True)
+    else:
+        base = pd.concat([D, T[~T['Analito_base'].isin(D['Analito_base'])]], ignore_index=True)
+
+    rows = []
+    for _, r in base.iterrows():
+        anal = r['Analito_norm']
+        idv = r['Id']
+        val = r['Valor_mg_L']
+        lim = limites.get(anal)
+        if lim is None or val is None:
+            status = 'Sem limite / Sem dado'
+        else:
+            status = 'Conforme' if val <= lim else 'Não conforme'
+        rows.append({'Id': idv, 'Analito': r['Analito_base'], 'Valor (mg/L)': val, 'Limite (mg/L)': lim, 'Status': status})
+
+    out = pd.DataFrame(rows)
+    resumo = pd.DataFrame()
+    if not out.empty:
+        resumo = out.groupby('Id')['Status'].apply(lambda s: 'REPROVADO' if (s=='Não conforme').any() else 'APROVADO').reset_index(name='Pré-avaliação (especificação)')
+    return out, resumo
+
+# ----------------------
+# UI com abas
 # ----------------------
 with st.sidebar:
-    st.header("Dados de Entrada")
+    st.header("Entrada de dados")
     file = st.file_uploader("Enviar arquivo (Excel/CSV)", type=["xlsx","xls","csv"]) 
     st.markdown("Ou cole a tabela abaixo (csv/tsv com cabeçalhos):")
-    st.session_state["pasted"] = st.text_area("Colar dados", value=st.session_state.get("pasted",""), height=180)
-
+    st.session_state["pasted"] = st.text_area("Colar dados", value=st.session_state.get("pasted",""), height=150)
     c1, c2 = st.columns(2)
     with c1:
-        btn_avaliar = st.button("Avaliar Lote", type="primary")
-    with c2:
         btn_limpar = st.button("Limpar")
-
+    with c2:
+        btn_carregar = st.button("Carregar")
     if btn_limpar:
         st.session_state["pasted"] = ""
         st.toast("Área de colagem limpa.")
 
-# Carregar dados de entrada
+# carregar df
 df_in = None
-if file is not None:
-    try:
-        if file.name.lower().endswith('.csv'):
-            df_in = pd.read_csv(file)
-        else:
-            df_in = pd.read_excel(file, sheet_name=0, engine='openpyxl')
-    except Exception as e:
-        st.error(f"Erro ao ler arquivo: {e}")
-elif st.session_state["pasted"]:
-    df_in = try_read_pasted(st.session_state["pasted"])
-    if df_in is None:
-        st.error("Não consegui interpretar o texto colado. Tente usar separador ';' ou TAB.")
-
-# Pré-visualização
-if df_in is not None:
-    st.subheader("Pré-visualização dos dados")
-    st.dataframe(df_in.head(20), use_container_width=True)
-
-# Avaliação do lote
-if btn_avaliar:
-    if df_in is None:
-        st.error("Informe os dados (arquivo ou colagem) antes de avaliar.")
-    else:
-        out_df, qc_out, lote, id_status = avaliar(df_in)
-
-        # Status do lote e por ID no sidebar
-        with st.sidebar:
-            st.header("Status do Lote")
-            if lote.startswith('APROVADO'):
-                st.success(f"{lote}")
-            elif lote.startswith('REPROVADO'):
-                st.error(f"{lote}")
+if btn_carregar or True:
+    if file is not None:
+        try:
+            if file.name.lower().endswith('.csv'):
+                df_in = pd.read_csv(file)
             else:
-                st.warning(f"{lote}")
+                df_in = pd.read_excel(file, sheet_name=0, engine='openpyxl')
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo: {e}")
+    elif st.session_state["pasted"]:
+        df_in = try_read_pasted(st.session_state["pasted"])
+        if df_in is None:
+            st.error("Não consegui interpretar o texto colado. Tente usar separador ';' ou TAB.")
 
-            st.subheader("Status por ID")
-            # Ordena IDs por gravidade: REPROVADO > ATENÇÃO > APROVADO
+aba1, aba2, aba3, aba4 = st.tabs(["Avaliar Lote", "Legislação/Especificação", "Duplicatas", "Relatórios"])
+
+with aba1:
+    st.subheader("Avaliação: Dissolvidos vs Totais + QC Ítrio")
+    if df_in is None:
+        st.info("Carregue dados no sidebar.")
+    else:
+        st.dataframe(df_in.head(20), use_container_width=True)
+        if st.button("Avaliar Lote", type="primary"):
+            out_df, qc_out, lote, id_status, df_num_full = avaliar(df_in)
+            if lote.startswith('APROVADO'):
+                st.success(f"Status do Lote: {lote}")
+            elif lote.startswith('REPROVADO'):
+                st.error(f"Status do Lote: {lote}")
+            else:
+                st.warning(f"Status do Lote: {lote}")
+            st.markdown("**Status por ID**")
             order_map = {'REPROVADO':0,'ATENÇÃO':1,'APROVADO':2}
             for idv, stid in sorted(id_status.items(), key=lambda x: (order_map.get(x[1],9), x[0])):
-                if stid == "REPROVADO":
-                    st.error(f"ID {idv}: {stid}")
-                elif stid == "ATENÇÃO":
-                    st.warning(f"ID {idv}: {stid}")
-                else:
-                    st.success(f"ID {idv}: {stid}")
+                st.write(f"• ID {idv}: {stid}")
+            st.divider()
+            st.subheader("Comparação Dissolvido vs Total")
+            st.dataframe(style_status(out_df), use_container_width=True)
+            st.subheader("QC Ítrio (70–130%)")
+            if qc_out.empty:
+                st.info("Nenhuma linha de Ítrio em % encontrada.")
+            else:
+                st.dataframe(style_status(qc_out), use_container_width=True)
+            st.subheader("Exportar")
+            csv_out = out_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Baixar Resultado (CSV)", csv_out, file_name="resultado_comparacao.csv", mime="text/csv")
+            if not qc_out.empty:
+                csv_qc = qc_out.to_csv(index=False).encode('utf-8')
+                st.download_button("Baixar QC Ítrio (CSV)", csv_qc, file_name="qc_itrio.csv", mime="text/csv")
+            st.session_state['df_num_full'] = df_num_full
 
-        # Tabelas de saída
-        st.subheader("Resultado - Comparação Dissolvido vs Total")
-        st.dataframe(out_df, use_container_width=True)
+with aba2:
+    st.subheader("Pré‑avaliação por legislação / especificação")
+    if df_in is None:
+        st.info("Carregue dados no sidebar.")
+    else:
+        df_num = preparar_numerico(df_in)
+        st.session_state['df_num_full'] = df_num
+        spec_keys = list(catalog.keys())
+        filtro = st.text_input("Filtrar lista por texto (ex.: 'Portaria 888' ou 'CONAMA 357')")
+        if filtro:
+            spec_keys = [k for k in spec_keys if filtro.lower() in k.lower()]
+        spec_key = st.selectbox("Selecione a especificação", options=spec_keys, index=0 if spec_keys else None)
+        meta = catalog.get(spec_key, {})
+        st.markdown(f"**Descrição:** {meta.get('title','')}  ")
+        st.markdown(f"**Matriz:** {', '.join(meta.get('matrices', []))}")
+        if st.button("Rodar pré‑avaliação", type="primary") and spec_key:
+            pre_df, pre_resumo = aplicar_especificacao(df_num, spec_key)
+            if pre_df.empty:
+                st.info("Sem dados aplicáveis ou especificação sem limites carregados.")
+            else:
+                st.dataframe(style_status(pre_df), use_container_width=True)
+                if not pre_resumo.empty:
+                    st.caption("Resumo por ID:")
+                    st.dataframe(pre_resumo, use_container_width=True)
+                csv_pre = pre_df.to_csv(index=False).encode('utf-8')
+                st.download_button("Baixar pré‑avaliação (CSV)", csv_pre, file_name="pre_avaliacao_especificacao.csv", mime="text/csv")
 
-        st.subheader("QC Ítrio (Recuperação 70–130%)")
-        if qc_out.empty:
-            st.info("Nenhuma linha de Ítrio em % encontrada.")
-        else:
-            st.dataframe(qc_out, use_container_width=True)
-
-        # Exportar
-        st.divider()
-        st.subheader("Exportar")
-        csv_out = out_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Baixar Resultado (CSV)", csv_out, file_name="resultado_comparacao.csv", mime="text/csv")
-        if not qc_out.empty:
-            csv_qc = qc_out.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar QC Ítrio (CSV)", csv_qc, file_name="qc_itrio.csv", mime="text/csv")
-
-# ----------------------
-# Comparação de duplicatas (UI)
-# ----------------------
-if df_in is not None:
-    st.divider()
+with aba3:
     st.subheader("Comparação de duplicatas (%RPD)")
-    st.markdown("Selecione **duas amostras** (campo 'Nº Amostra') e defina a **tolerância** em %.")
-
-    amostras = sorted(df_in['Nº Amostra'].dropna().astype(str).unique()) if 'Nº Amostra' in df_in.columns else []
-    col_dup = st.columns(3)
-    with col_dup[0]:
-        am1 = st.selectbox("Amostra 1", options=amostras, index=0 if amostras else None)
-    with col_dup[1]:
-        am2 = st.selectbox("Amostra 2", options=amostras, index=1 if len(amostras)>1 else None)
-    with col_dup[2]:
-        tol = st.number_input("Tolerância (%RPD)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
-
-    btn_comp = st.button("Comparar duplicatas", type="secondary")
-
-    if btn_comp:
-        if not amostras or am1 is None or am2 is None:
-            st.error("Dados insuficientes ou amostras não selecionadas.")
-        elif am1 == am2:
-            st.warning("Selecione amostras diferentes para comparação.")
-        else:
+    if df_in is None:
+        st.info("Carregue dados no sidebar.")
+    else:
+        amostras = sorted(df_in['Nº Amostra'].dropna().astype(str).unique()) if 'Nº Amostra' in df_in.columns else []
+        c = st.columns(3)
+        with c[0]:
+            am1 = st.selectbox("Amostra 1", options=amostras, index=0 if amostras else None)
+        with c[1]:
+            am2 = st.selectbox("Amostra 2", options=amostras, index=1 if len(amostras)>1 else None)
+        with c[2]:
+            tol = st.number_input("Tolerância (%RPD)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+        if st.button("Comparar duplicatas", type="secondary"):
             res_dup = comparar_duplicatas(df_in, am1, am2, tolerancia_pct=tol)
-            st.dataframe(res_dup, use_container_width=True)
-
-            # Resumo
+            st.dataframe(style_status(res_dup), use_container_width=True)
             n_nc = (res_dup['Status'] == 'Não conforme').sum()
             n_ok = ((res_dup['Status'] == 'Conforme') | (res_dup['Status'] == 'OK')).sum()
             n_inc = (res_dup['Status'] == 'INCONCLUSIVO').sum()
             st.caption(f"Resumo: Não conformes = {n_nc} | Conforme/OK = {n_ok} | Inconclusivos = {n_inc}")
-
-            # Download
             csv_dup = res_dup.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar comparação de duplicatas (CSV)", csv_dup, file_name="comparacao_duplicatas.csv", mime="text/csv")
+            st.download_button("Baixar duplicatas (CSV)", csv_dup, file_name="comparacao_duplicatas.csv", mime="text/csv")
 
-# Rodapé
+with aba4:
+    st.subheader("Relatórios (em breve)")
+    st.info("Geração de PDF e planilhas consolidadas — futuro incremento.")
+
 st.caption("© {} | operalab_validador_metais".format(pd.Timestamp.now().year))
