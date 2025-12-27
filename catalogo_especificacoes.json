@@ -1,0 +1,137 @@
+{
+  "Portaria GM/MS 888/2021 – Potabilidade (metais)": {
+    "title": "Padrão de potabilidade – metais (Anexo XX)",
+    "matrices": [
+      "A"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {
+      "Antimônio": 0.02,
+      "Arsênio": 0.01,
+      "Bário": 0.7,
+      "Boro": 0.3,
+      "Cádmio": 0.003,
+      "Chumbo": 0.01,
+      "Cobre": 2.0,
+      "Crômio total": 0.05,
+      "Mercúrio": 0.001,
+      "Níquel": 0.07,
+      "Selênio": 0.04
+    }
+  },
+  "CONAMA 430/2011 – Art. 16 (Padrões de lançamento de efluentes)": {
+    "title": "Padrões de lançamento — Art. 16, Tabela I (inorgânicos)",
+    "matrices": [
+      "EFL"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {
+      "Arsênio": 0.5,
+      "Bário": 5.0,
+      "Boro": 5.0,
+      "Cádmio": 0.2,
+      "Chumbo": 0.5,
+      "Cobre": 1.0,
+      "Crômio hexavalente": 0.1,
+      "Crômio trivalente": 1.0,
+      "Estanho": 4.0,
+      "Ferro": 15.0,
+      "Fluoreto": 10.0,
+      "Manganês": 1.0,
+      "Mercúrio": 0.01,
+      "Níquel": 2.0,
+      "Prata": 0.1,
+      "Selênio": 0.3,
+      "Sulfeto": 1.0,
+      "Zinco": 5.0
+    }
+  },
+  "CETESB DD 125/2021 – VI (Água Subterrânea)": {
+    "title": "Valores de Intervenção (Água Subterrânea) — DD 125/2021/E (CETESB)",
+    "matrices": [
+      "ASub"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {
+      "Antimônio": 0.006,
+      "Arsênio": 0.01,
+      "Bário": 0.7,
+      "Boro": 2.4,
+      "Cádmio": 0.003,
+      "Chumbo": 0.01,
+      "Cobalto": 0.07,
+      "Cobre": 2.0,
+      "Crômio total": 0.05,
+      "Mercúrio": 0.001,
+      "Molibdênio": 0.03,
+      "Níquel": 0.07,
+      "Prata": 0.05,
+      "Selênio": 0.04,
+      "Zinco": 1.8
+    }
+  },
+  "CONAMA 357/2005 – Classe 1 (água doce – lótico)": {
+    "title": "CONAMA 357/2005 Classe 1 – água doce (lótico) — limites por metal (a preencher)",
+    "matrices": [
+      "AS"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  },
+  "CONAMA 357/2005 – Classe 2 (água doce – lótico)": {
+    "title": "CONAMA 357/2005 Classe 2 – água doce (lótico) — limites por metal (a preencher)",
+    "matrices": [
+      "AS"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  },
+  "CONAMA 357/2005 – Classe 3 (água doce – lótico)": {
+    "title": "CONAMA 357/2005 Classe 3 – água doce (lótico) — limites por metal (a preencher)",
+    "matrices": [
+      "AS"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  },
+  "CONAMA 357/2005 – Classe 4 (água doce – lótico)": {
+    "title": "CONAMA 357/2005 Classe 4 – água doce (lótico) — limites por metal (a preencher)",
+    "matrices": [
+      "AS"
+    ],
+    "prefer_total": true,
+    "limits_mgL": {}
+  },
+  "CONAMA 420/2009 – VP (Solo)": {
+    "title": "Valores de Prevenção (Solo) — metais (mg/kg) — a preencher",
+    "matrices": [
+      "S"
+    ],
+    "prefer_total": true,
+    "limits_mgkg": {}
+  },
+  "CONAMA 420/2009 – VI Agrícola (Solo)": {
+    "title": "Valores de Investigação uso Agrícola (Solo) — metais (mg/kg) — a preencher",
+    "matrices": [
+      "S"
+    ],
+    "prefer_total": true,
+    "limits_mgkg": {}
+  },
+  "CONAMA 420/2009 – VI Residencial (Solo)": {
+    "title": "Valores de Investigação uso Residencial (Solo) — metais (mg/kg) — a preencher",
+    "matrices": [
+      "S"
+    ],
+    "prefer_total": true,
+    "limits_mgkg": {}
+  },
+  "CONAMA 420/2009 – VI Industrial (Solo)": {
+    "title": "Valores de Investigação uso Industrial (Solo) — metais (mg/kg) — a preencher",
+    "matrices": [
+      "S"
+    ],
+    "prefer_total": true,
+    "limits_mgkg": {}
+  }
+}
