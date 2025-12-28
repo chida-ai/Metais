@@ -7,27 +7,55 @@ from pathlib import Path
 from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Data Support - Dashboard", layout="wide")
+st.set_page_config(page_title="Data Support - Lab Ambiental", layout="wide")
 
-# --- CSS PARA ESTILIZAÇÃO DOS BOTÕES E TABELAS ---
+# --- CSS PARA TEMA DARK E BOTÕES DE ALTO CONTRASTE ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
+    /* Fundo principal Dark */
+    .stApp {
+        background-color: #0E1117;
+        color: #FFFFFF;
+    }
+    
+    /* Estilização dos Botões Laterais */
     div.stButton > button:first-child {
         width: 100%;
         border-radius: 8px;
-        height: 3em;
-        background-color: #f0f2f6;
-        border: 1px solid #d1d5db;
-        transition: all 0.3s;
+        height: 3.5em;
+        background-color: #1F2937; /* Cinza escuro azulado */
+        color: #FFFFFF !important; /* Texto Branco Forçado */
+        border: 1px solid #374151;
+        font-weight: 600;
+        font-size: 16px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+        text-align: left;
+        padding-left: 20px;
     }
+    
+    /* Hover - Quando passa o mouse */
     div.stButton > button:hover {
-        background-color: #FF0000;
-        color: white;
+        background-color: #FF0000 !important;
+        color: white !important;
         border: 1px solid #FF0000;
+        transform: translateX(5px);
     }
-    .status-aprovado { color: #34C759; font-weight: bold; }
-    .status-reprovado { color: #FF3B30; font-weight: bold; }
+
+    /* Ajuste de tabelas para Dark Mode */
+    .stDataFrame {
+        border: 1px solid #374151;
+        border-radius: 5px;
+    }
+    
+    /* Títulos e textos */
+    h1, h2, h3 { color: #F3F4F6; }
+    
+    /* Customização do Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #111827;
+        border-right: 1px solid #374151;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -67,43 +95,40 @@ def load_catalog():
             return json.load(f)
     except: return {}
 
-# --- SIDEBAR (LOGO E CABEÇALHO) ---
+# --- SIDEBAR (IDENTIDADE DATA SUPPORT) ---
 with st.sidebar:
     LOGO_PATH = Path("assets/operalab_logo.png")
     if LOGO_PATH.exists(): st.image(str(LOGO_PATH), use_container_width=True)
     
     st.markdown("""
-        <div style="text-align: left; margin-bottom: 20px;">
-            <h1 style="margin:0; font-size: 32px; color: #1e293b;">Data Support</h1>
+        <div style="text-align: left; margin-bottom: 30px;">
+            <h1 style="margin:0; font-size: 32px; color: #FFFFFF; letter-spacing: 1px;">Data Support</h1>
             <div style="height:4px; background:#FF0000; width:100%; margin-top:2px;"></div>
-            <p style="color: #FF0000; font-size: 16px; font-weight: bold; margin-top:4px;">
-                Avaliação de Resultados
+            <p style="color: #FF0000; font-size: 14px; font-weight: bold; margin-top:4px; text-transform: uppercase;">
+                Lab Ambiental - Gestão de Dados
             </p>
         </div>
         """, unsafe_allow_html=True)
     
-    st.divider()
-    st.subheader("Navegação")
     if st.button("📥 Inserir Dados"): st.session_state.pagina = "📥 Inserir Dados"
     if st.button("🧪 Avaliação de Lote"): st.session_state.pagina = "🧪 Avaliação de Lote"
-    if st.button("⚖️ Legislação & Incerteza"): st.session_state.pagina = "⚖️ Legislação & Incerteza"
-    if st.button("👥 Duplicatas (RPD)"): st.session_state.pagina = "👥 Duplicatas (RPD)"
+    if st.button("⚖️ Legislação & U"): st.session_state.pagina = "⚖️ Legislação & U"
+    if st.button("👥 Duplicatas"): st.session_state.pagina = "👥 Duplicatas"
     
-    st.divider()
-    if st.session_state["df_global"] is not None:
-        st.success(f"Lote ativo: {len(st.session_state['df_global'])} registros")
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.caption(f"🗓️ {datetime.now().strftime('%d/%m/%Y')}")
 
-# --- MÓDULOS ---
+# --- MÓDULOS PRINCIPAIS ---
 
 if st.session_state.pagina == "📥 Inserir Dados":
-    st.header("📥 Carregamento de Amostras")
-    col1, col2 = st.columns(2)
+    st.title("📥 Entrada de Amostras")
+    col1, col2 = st.columns([1, 1])
     with col1:
-        file = st.file_uploader("Arraste seu arquivo Excel/CSV", type=["xlsx", "csv"])
+        file = st.file_uploader("Upload Planilha (Excel/CSV)", type=["xlsx", "csv"])
     with col2:
-        pasted = st.text_area("Ou cole os dados do sistema aqui", height=150, placeholder="ID | Amostra | Analito | Valor...")
+        pasted = st.text_area("Colagem Direta (Sistema)", height=150, placeholder="Copie as linhas do sistema e cole aqui...")
     
-    if st.button("Processar Lote", type="primary"):
+    if st.button("🚀 Processar Dados do Lote", type="primary"):
         df_temp = None
         if file: df_temp = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
         elif pasted:
@@ -120,96 +145,85 @@ if st.session_state.pagina == "📥 Inserir Dados":
             df_temp['V_mgL'] = df_temp.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
             df_temp['Analito_base'] = df_temp['Análise'].map(normalize_analito)
             st.session_state["df_global"] = df_temp
-            st.success("✅ Dados carregados com sucesso!")
-            st.balloons()
-        else: st.error("❌ Formato não reconhecido.")
+            st.success("Lote carregado com sucesso!")
+        else: st.error("Erro na leitura. Verifique os separadores (TAB ou ponto-e-vírgula).")
 
 elif st.session_state.pagina == "🧪 Avaliação de Lote":
-    st.header("🧪 Avaliação Química do Lote")
-    if st.session_state["df_global"] is None: st.info("Aguardando dados...")
+    st.title("🧪 Avaliação Técnica")
+    if st.session_state["df_global"] is None: st.warning("Por favor, carregue os dados primeiro.")
     else:
         df = st.session_state["df_global"]
         
         # Dissolvido x Total
-        st.subheader("Comparação Dissolvidos vs Totais")
+        st.subheader("📊 Dissolvidos vs Totais")
         D = df[df['Método de Análise'].str.contains('Dissolvidos', case=False, na=False)].copy()
         T = df[df['Método de Análise'].str.contains('Totais', case=False, na=False)].copy()
         
         if not D.empty and not T.empty:
             merged = pd.merge(D, T, on=['Id', 'Analito_base'], suffixes=('_diss', '_tot'))
-            merged['Avaliação'] = np.where(merged['V_mgL_diss'] > (merged['V_mgL_tot'] * 1.05), "❌ NÃO CONFORME", "✅ OK")
+            merged['Status'] = np.where(merged['V_mgL_diss'] > (merged['V_mgL_tot'] * 1.05), "❌ NÃO CONFORME", "✅ OK")
             
-            # Renomeando para exibição
-            disp = merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'Avaliação']].copy()
-            disp.columns = ['ID', 'Analito', 'Conc. Dissolvido (mg/L)', 'Conc. Total (mg/L)', 'Status']
-            st.dataframe(disp.style.apply(lambda x: ['background-color: #FF3B30; color: white' if v == "❌ NÃO CONFORME" else '' for v in x], axis=1, subset=['Status']), use_container_width=True)
+            res_disp = merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'Status']].copy()
+            res_disp.columns = ['ID', 'Analito', 'Conc. Diss (mg/L)', 'Conc. Total (mg/L)', 'Avaliação']
+            st.dataframe(res_disp, use_container_width=True)
         
         # QC Ítrio
         st.divider()
-        st.subheader("Controle de Recuperação (Ítrio)")
+        st.subheader("🎯 Recuperação de Ítrio (%)")
         itrio = df[df['Análise'].str.contains('itrio|ítrio', case=False, na=False)]
         if not itrio.empty:
-            it_disp = itrio[['Id', 'Nº Amostra', 'Análise', 'Valor_num']].copy()
-            it_disp['Recuperação (%)'] = it_disp['Valor_num']
-            it_disp['Resultado'] = it_disp['Recuperação (%)'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ REPROVADO")
-            st.table(it_disp[['ID', 'Nº Amostra', 'Recuperação (%)', 'Resultado']])
+            it_disp = itrio[['Id', 'Nº Amostra', 'Valor_num']].copy()
+            it_disp.columns = ['ID', 'Nº Amostra', 'Recuperação (%)']
+            it_disp['Parecer'] = it_disp['Recuperação (%)'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ REPROVADO")
+            st.table(it_disp)
 
-elif st.session_state.pagina == "⚖️ Legislação & Incerteza":
-    st.header("⚖️ Avaliação Normativa + Incerteza")
-    if st.session_state["df_global"] is None: st.info("Aguardando dados...")
+elif st.session_state.pagina == "⚖️ Legislação & U":
+    st.title("⚖️ Conformidade Legal & Incerteza")
+    if st.session_state["df_global"] is None: st.warning("Aguardando dados...")
     else:
-        with st.expander("🛠️ Configurar Incerteza do Método (U)", expanded=False):
-            c1, c2, c3, c4 = st.columns(4)
+        with st.expander("🛠️ Parâmetros Metrológicos (Incerteza Expandida)", expanded=False):
+            c1, c2, c3 = st.columns(3)
             p = {
-                'u_cal': c1.number_input("u_Calib (%)", 0.0, 5.0, 1.5),
-                'u_pip': c2.number_input("u_Pipet (%)", 0.0, 5.0, 2.5),
-                'u_dil': c3.number_input("u_Dilu (%)", 0.0, 5.0, 0.8),
-                'k': c4.number_input("Fator k", 1.0, 3.0, 2.0),
-                'rsd': st.slider("RSD do Equipamento (%)", 0.1, 10.0, 2.0)
+                'u_cal': c1.number_input("Incerteza Calibração (%)", 0.0, 5.0, 1.5),
+                'u_pip': c2.number_input("Incerteza Volumétrica (%)", 0.0, 5.0, 2.5),
+                'u_dil': c3.number_input("Incerteza Diluição (%)", 0.0, 5.0, 0.8),
+                'k': 2.0, 'rsd': 2.0
             }
         
         catalog = load_catalog()
-        spec_key = st.selectbox("Selecione a Legislação de Referência:", options=list(catalog.keys()))
+        spec_key = st.selectbox("Selecione a Legislação:", options=list(catalog.keys()))
         
         if spec_key:
-            limits = catalog[spec_key]['limits_mgL']
+            lims = catalog[spec_key]['limits_mgL']
             df_leg = st.session_state["df_global"].copy()
-            df_leg = df_leg[df_leg['Analito_base'].isin(limits.keys())].copy()
-            df_leg['Limite'] = df_leg['Analito_base'].map(limits)
-            df_leg['U_exp'] = df_leg['V_mgL'].apply(lambda x: calc_U(x, p))
+            df_leg = df_leg[df_leg['Analito_base'].isin(lims.keys())].copy()
+            df_leg['Limite'] = df_leg['Analito_base'].map(lims)
+            df_leg['U'] = df_leg['V_mgL'].apply(lambda x: calc_U(x, p))
             
             def julgar(r):
                 if r['V_mgL'] > r['Limite']: return "❌ REPROVADO"
-                if (r['V_mgL'] + r['U_exp']) > r['Limite']: return "🔄 REANALISAR"
+                if (r['V_mgL'] + r['U']) > r['Limite']: return "🔄 REANALISAR"
                 return "✅ CONFORME"
             
             df_leg['Parecer'] = df_leg.apply(julgar, axis=1)
-            
-            # Renomeando para o usuário
-            leg_disp = df_leg[['Id', 'Analito_base', 'V_mgL', 'U_exp', 'Limite', 'Parecer']].copy()
-            leg_disp.columns = ['ID', 'Elemento', 'Resultado (mg/L)', 'Incerteza U (±)', 'Limite Normativo (mg/L)', 'Parecer Técnico']
-            st.dataframe(leg_disp, use_container_width=True)
+            final = df_leg[['Id', 'Analito_base', 'V_mgL', 'U', 'Limite', 'Parecer']].copy()
+            final.columns = ['ID', 'Analito', 'Resultado (mg/L)', 'Incerteza (±)', 'VMP (mg/L)', 'Status']
+            st.dataframe(final, use_container_width=True)
 
-elif st.session_state.pagina == "👥 Duplicatas (RPD)":
-    st.header("👥 Verificação de Precisão (Duplicatas)")
-    if st.session_state["df_global"] is None: st.info("Aguardando dados...")
+elif st.session_state.pagina == "👥 Duplicatas":
+    st.title("👥 Controle de Precisão (RPD)")
+    if st.session_state["df_global"] is None: st.warning("Aguardando dados...")
     else:
         df = st.session_state["df_global"]
         amostras = df['Nº Amostra'].dropna().unique()
-        col1, col2, col3 = st.columns(3)
-        a1 = col1.selectbox("Amostra Original", amostras)
-        a2 = col2.selectbox("Duplicata", amostras)
-        tol = col3.number_input("Tolerância RPD (%)", 1, 100, 20)
+        col1, col2 = st.columns(2)
+        a1 = col1.selectbox("Amostra A", amostras)
+        a2 = col2.selectbox("Amostra B (Duplicata)", amostras)
         
         if a1 and a2:
             a1_d = df[df['Nº Amostra'] == a1][['Analito_base', 'V_mgL']]
             a2_d = df[df['Nº Amostra'] == a2][['Analito_base', 'V_mgL']]
             comp = pd.merge(a1_d, a2_d, on='Analito_base', suffixes=('_A', '_B'))
             comp['RPD (%)'] = abs(comp['V_mgL_A'] - comp['V_mgL_B']) / ((comp['V_mgL_A'] + comp['V_mgL_B'])/2) * 100
-            comp['Avaliação'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= tol else "❌ REPROVADO")
-            
-            comp.columns = ['Analito', 'Conc. Original (mg/L)', 'Conc. Duplicata (mg/L)', 'RPD (%)', 'Status']
+            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
             st.dataframe(comp, use_container_width=True)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(f"Logado como Analista • {datetime.now().strftime('%d/%m/%Y')}")
