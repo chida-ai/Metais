@@ -1,6 +1,7 @@
-# app.py (OPERA LAB – Analyst Support, versão segura e ASCII-safe)
+# app.py (OPERA LAB – Analyst Support)
 import json
 from pathlib import Path
+import io
 import pandas as pd
 import streamlit as st
 
@@ -18,7 +19,6 @@ st.set_page_config(
 # =============================
 
 def safe_error(msg, exc=None):
-    """Apresenta erro no front sem quebrar renderização."""
     if exc:
         st.error(f"{msg}: {exc}")
     else:
@@ -26,7 +26,6 @@ def safe_error(msg, exc=None):
 
 
 def load_json_safe(path: Path):
-    """Lê JSON com tratamento de erros e retorna dict vazio em falha."""
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -51,12 +50,10 @@ def load_catalogo(path: Path):
 
 def filtrar_normas_por_matriz(catalogo_dict, matriz_sel):
     normas = catalogo_dict.get("normas", [])
-    # Espera: cada norma com campos: nome, codigo, aplicavel_matrizes (lista), itens (lista)
     return [n for n in normas if matriz_sel in n.get("aplicavel_matrizes", [])]
 
 
 def calc_rpd(v1: float, v2: float) -> float:
-    """Calcula %RPD com proteção para soma zero."""
     denom = (v1 + v2) / 2.0
     if denom == 0:
         return 0.0
@@ -64,40 +61,73 @@ def calc_rpd(v1: float, v2: float) -> float:
 
 
 def calc_U(u: float, k: float) -> float:
-    """Incerteza expandida U = k * u."""
     return k * u
 
 
 # =============================
-# 3) Sidebar e navegação
+# 3) Estado de navegação persistente
+# =============================
+PAGES = {
+    "Legislação/Especificação": "normas",
+    "Decisão ICP": "icp",
+    "Dissolvidos vs Totais + QC Ítrio": "diss_tot",
+    "Duplicatas (%RPD)": "duplicatas",
+    "Calibração semanal": "calibracao",
+}
+
+if "page" not in st.session_state:
+    st.session_state.page = "normas"  # página inicial
+
+# =============================
+# 4) Sidebar e navegação
 # =============================
 with st.sidebar:
     st.header("OPERA LAB")
     st.caption("Analyst Support")
-    # Matrizes conforme preferência do Alexandre: A, AS, ASub, EFL, S
     matriz = st.selectbox("Matriz do lote", ["A", "AS", "ASub", "EFL", "S"], index=0)
     st.divider()
     st.write("Seções")
-    go_normas = st.button("Legislação/Especificação")
-    go_icp = st.button("Decisão ICP")
-    go_diss_tot = st.button("Dissolvidos vs Totais + QC Ítrio")
-    go_dup = st.button("Duplicatas (%RPD)")
-    go_cal = st.button("Calibração semanal")
+    # Botões que atualizam session_state.page
+    if st.button("Legislação/Especificação"):
+        st.session_state.page = "normas"
+    if st.button("Decisão ICP"):
+        st.session_state.page = "icp"
+    if st.button("Dissolvidos vs Totais + QC Ítrio"):
+        st.session_state.page = "diss_tot"
+    if st.button("Duplicatas (%RPD)"):
+        st.session_state.page = "duplicatas"
+    if st.button("Calibração semanal"):
+        st.session_state.page = "calibracao"
 
 # =============================
-# 4) Cabeçalho
+# 5) Cabeçalho
 # =============================
 st.title("OPERA LAB – Analyst Support")
 st.caption(f"Matriz selecionada: {matriz}")
 
 # =============================
-# 5) Carregar catálogo
+# 6) Dados e catálogo
 # =============================
 CATALOGO_PATH = Path("catalogo_especificacoes.json")
 catalogo = load_catalogo(CATALOGO_PATH)
 
+# Upload opcional de dados do lote (CSV/XLSX)
+with st.expander("Dados do lote (upload opcional)", expanded=False):
+    up = st.file_uploader("CSV ou XLSX", type=["csv", "xlsx"])
+    df_lote = None
+    if up is not None:
+        try:
+            if up.name.lower().endswith(".csv"):
+                df_lote = pd.read_csv(up)
+            else:
+                df_lote = pd.read_excel(up, engine="openpyxl")
+            st.success(f"Arquivo carregado: {up.name}")
+            st.dataframe(df_lote.head(50), use_container_width=True)
+        except Exception as e:
+            safe_error("Falha ao ler dados do lote", e)
+
 # =============================
-# 6) Seções
+# 7) Seções
 # =============================
 
 def sec_legislacao():
@@ -140,16 +170,35 @@ def sec_decisao_icp():
     with col2:
         usar_catalogo = st.checkbox("Usar limites do catálogo", value=True)
         limite_manual = st.text_input("Limite manual (opcional)", value="")
-        st.write("Incerteza expandida U:", f"{calc_U(u, k):.3f}")
-        st.write("RSD informado:", f"{rsd:.2f}%")
-        st.write("Recuperação informada:", f"{rec:.2f}%")
-    st.info("Implemente aqui os cálculos detalhados e gráficos. Use st.download_button para exportar CSV do log.")
+        st.metric("Incerteza expandida U", f"{calc_U(u, k):.3f}")
+        st.metric("RSD", f"{rsd:.2f}%")
+        st.metric("Recuperação", f"{rec:.2f}%")
+
+    # Log simples (em memória) e export
+    log_rows = [
+        {"u": u, "k": k, "U": calc_U(u, k), "RSD(%)": rsd, "Rec(%)": rec, "matriz": matriz}
+    ]
+    log_df = pd.DataFrame(log_rows)
+    st.dataframe(log_df, use_container_width=True)
+    csv_bytes = log_df.to_csv(index=False).encode("utf-8")
+    st.download_button("Exportar log CSV", data=csv_bytes, file_name="log_icp.csv", mime="text/csv")
 
 
 def sec_dissolvidos_totais():
     st.subheader("Dissolvidos vs Totais + QC Ítrio")
-    st.caption("Avaliação comparativa e controle de qualidade (Ítrio).")
-    st.info("Placeholders. Faça upload dos dados do lote e compare dissolvidos vs totais. Inserir regra do QC Ítrio.")
+    st.caption("Comparação e controle de qualidade (Ítrio). Use dados do lote para análise.")
+    st.info("Exemplo: informe pares de resultados para o mesmo analito (Dissolvido vs Total).")
+    colA, colB = st.columns(2)
+    with colA:
+        vd = st.number_input("Valor Dissolvido", min_value=0.0, value=10.0)
+    with colB:
+        vt = st.number_input("Valor Total", min_value=0.0, value=12.0)
+    if vt == 0:
+        st.warning("Valor Total zero — razão D/T indefinida.")
+    else:
+        razao = vd / vt
+        st.metric("Razão Dissolvido/Total", f"{razao:.3f}")
+    st.info("QC Ítrio: implemente aqui critério específico do seu método (placeholder).")
 
 
 def sec_duplicatas():
@@ -157,47 +206,56 @@ def sec_duplicatas():
     st.caption("Cálculo do %RPD para amostras duplicatas.")
     v1 = st.number_input("Valor A", min_value=0.0, value=10.0)
     v2 = st.number_input("Valor B", min_value=0.0, value=12.0)
-    if v1 == 0 and v2 == 0:
-        st.warning("Valores ambos zero — RPD indefinido.")
-    else:
-        rpd = calc_rpd(v1, v2)
-        st.metric("%RPD", f"{rpd:.2f}%")
+    rpd = calc_rpd(v1, v2)
+    st.metric("%RPD", f"{rpd:.2f}%")
+    st.info("Regra típica: aceitar se %RPD <= 20% (ajuste conforme seu método).")
 
 
 def sec_calibracao():
     st.subheader("Calibração semanal")
     st.caption("Roteiro e validação em lote.")
-    st.write("- Preparar padrões, verificar linearidade, ajustar curva, validar em lote.")
-    st.info("Adicione checklist e upload de arquivos para validar automaticamente.")
+    st.write("- Preparar padrões, verificar linearidade (R²), faixa, pontos e resíduos.")
+    st.write("- Validar em lote: critérios de recuperação, RSD, branco, controle.")
+    # Placeholder: upload de resultados de calibração
+    up_cal = st.file_uploader("Curva de calibração (CSV)", type=["csv"], key="up_cal")
+    if up_cal is not None:
+        try:
+            dfc = pd.read_csv(up_cal)
+            st.dataframe(dfc, use_container_width=True)
+            st.success("Curva carregada — implemente aqui validação (linearidade, resíduos, faixa).")
+        except Exception as e:
+            safe_error("Falha ao ler curva de calibração", e)
 
 # =============================
-# 7) Render com navegação
+# 8) Router de páginas
 # =============================
 try:
-    if go_normas:
+    page = st.session_state.page
+    if page == "normas":
         sec_legislacao()
-    elif go_icp:
+    elif page == "icp":
         sec_decisao_icp()
-    elif go_diss_tot:
+    elif page == "diss_tot":
         sec_dissolvidos_totais()
-    elif go_dup:
+    elif page == "duplicatas":
         sec_duplicatas()
-    elif go_cal:
+    elif page == "calibracao":
         sec_calibracao()
     else:
-        st.success("Selecione uma seção na barra lateral para começar.")
+        st.warning("Página desconhecida. Voltando para Legislação.")
+        st.session_state.page = "normas"
         sec_legislacao()
 except Exception as e:
     safe_error("Falha na renderização de seção", e)
 
 # =============================
-# 8) CSS leve e seguro (opcional)
+# 9) CSS leve e seguro
 # =============================
 st.markdown(
     """
 <style>
 :root { --accent: #00A3FF; }
-.block-container { padding-top: 1.1rem; }
+.block-container { padding-top: 1.0rem; }
 </style>
     """,
     unsafe_allow_html=True,
