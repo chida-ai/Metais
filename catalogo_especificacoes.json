@@ -1,52 +1,51 @@
 {
-  "CONAMA 357/2005 - Água Doce Classe 2": {
-    "title": "Limites para águas doces (Abastecimento após tratamento convencional)",
-    "matrices": ["Água Doce"],
-    "prefer_total": true,
+  "CETESB DD 125/2021 - Solo (Prevenção)": {
     "limits_mgL": {
-      "Arsênio": 0.01,
-      "Bário": 0.7,
-      "Cádmio": 0.001,
-      "Chumbo": 0.01,
-      "Cobre": 0.009,
-      "Crômio total": 0.05,
-      "Mercúrio": 0.0002,
-      "Níquel": 0.02,
-      "Zinco": 0.18
+      "Arsênio": 15.0, "Bário": 150.0, "Cádmio": 1.3, "Chumbo": 72.0, "Cobalto": 25.0, 
+      "Cobre": 60.0, "Crômio": 75.0, "Mercúrio": 0.5, "Níquel": 30.0, "Zinco": 300.0
     }
   },
-  "CONAMA 420/2009 - Solo Agrícola": {
-    "title": "Valores de Prevenção para Solos (Valores Orientadores)",
-    "matrices": ["Solo"],
-    "prefer_total": true,
+  "CETESB DD 125/2021 - Água Subterrânea": {
     "limits_mgL": {
-      "Arsênio": 15.0,
-      "Bário": 120.0,
-      "Cádmio": 1.3,
-      "Chumbo": 72.0,
-      "Cobre": 60.0,
-      "Crômio total": 75.0,
-      "Mercúrio": 0.5,
-      "Níquel": 30.0,
-      "Zinco": 300.0
+      "Arsênio": 0.01, "Bário": 0.7, "Cádmio": 0.005, "Chumbo": 0.01, "Cobalto": 0.05, 
+      "Cobre": 2.0, "Crômio": 0.05, "Mercúrio": 0.001, "Níquel": 0.07, "Zinco": 5.0
     }
   },
-  "Portaria GM/MS 888/2021 - Potabilidade": {
-    "title": "Padrão de Potabilidade para Água de Consumo Humano",
-    "matrices": ["Água para Consumo"],
-    "prefer_total": true,
+  "INEA DZ-102.R-4 - Efluentes (RJ)": {
     "limits_mgL": {
-      "Antimônio": 0.005,
-      "Arsênio": 0.01,
-      "Bário": 0.7,
-      "Cádmio": 0.005,
-      "Chumbo": 0.01,
-      "Cobre": 2.0,
-      "Crômio total": 0.05,
-      "Mercúrio": 0.001,
-      "Níquel": 0.07,
-      "Selênio": 0.01,
-      "Urânio": 0.03
+      "Arsênio": 0.5, "Bário": 5.0, "Cádmio": 0.2, "Chumbo": 0.5, "Cobre": 1.0, 
+      "Crômio": 0.5, "Mercúrio": 0.01, "Níquel": 2.0, "Zinco": 5.0
+    }
+  },
+  "NBR 10004 - Lixiviado (Classificação Resíduos)": {
+    "limits_mgL": {
+      "Arsênio": 1.0, "Bário": 70.0, "Cádmio": 0.5, "Chumbo": 1.0, "Crômio": 5.0, 
+      "Mercúrio": 0.1, "Prata": 5.0, "Selênio": 1.0
+    }
+  },
+  "NBR 10004 - Solubilizado (Classificação Resíduos)": {
+    "limits_mgL": {
+      "Alumínio": 0.2, "Arsênio": 0.01, "Bário": 0.7, "Cádmio": 0.005, "Chumbo": 0.01, 
+      "Cobre": 2.0, "Crômio": 0.05, "Ferro": 0.3, "Manganês": 0.1, "Mercúrio": 0.001, 
+      "Níquel": 0.07, "Zinco": 5.0, "Cloreto": 250.0, "Fluoreto": 1.5, "Sulfato": 250.0
+    }
+  },
+  "CONAMA 430 - Lançamento de Efluentes": {
+    "limits_mgL": {
+      "Arsênio": 0.5, "Bário": 5.0, "Cádmio": 0.2, "Chumbo": 0.5, "Cobre": 1.0, 
+      "Crômio": 0.5, "Ferro": 15.0, "Manganês": 1.0, "Mercúrio": 0.01, "Níquel": 2.0, "Zinco": 5.0
+    }
+  },
+  "Portaria GM/MS 888 - Potabilidade": {
+    "limits_mgL": {
+      "Antimônio": 0.005, "Arsênio": 0.01, "Bário": 0.7, "Cádmio": 0.003, "Chumbo": 0.01, 
+      "Cobre": 2.0, "Crômio": 0.05, "Mercúrio": 0.001, "Níquel": 0.07, "Selênio": 0.01, "Urânio": 0.03
+    }
+  },
+  "SIMA/CONAMA 420 - Solo (Industrial)": {
+    "limits_mgL": {
+      "Arsênio": 150.0, "Bário": 750.0, "Cádmio": 20.0, "Chumbo": 900.0, "Cobalto": 450.0, 
+      "Cobre": 1800.0, "Crômio": 480.0, "Mercúrio": 12.0, "Níquel": 450.0, "Zinco": 2000.0
     }
   }
 }
