@@ -4,35 +4,16 @@ import pandas as pd
 import numpy as np
 import io, re, json
 from pathlib import Path
+from datetime import datetime
 
-st.set_page_config(page_title="OPERALAB - Avaliação com Incerteza", layout="wide")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="OPERALAB - Gestão de Qualidade", layout="wide")
 
-# --- ESTILIZAÇÃO E CABEÇALHO ---
-LOGO_PATH = Path("assets/operalab_logo.png")
-header_cols = st.columns([0.9, 6])
-with header_cols[0]:
-    if LOGO_PATH.exists(): st.image(str(LOGO_PATH), width=160)
-    else: st.caption("Logo em: assets/operalab_logo.png")
-with header_cols[1]:
-    st.markdown("""
-        <div style="display:flex;align-items:center;gap:12px;">
-          <h1 style="margin:0;">OPERALAB&nbsp;&nbsp;-&nbsp;&nbsp;Avaliação de Resultados v3.0</h1>
-        </div>
-        <div style="height:4px;background:#00A3FF;border-radius:2px;margin-top:8px;"></div>
-        <div style="margin-top:6px;opacity:0.85;">
-          Dissolvidos vs Totais • QC Ítrio • Duplicatas (%RPD) • <b>Módulo de Incerteza Expandida (U)</b>
-        </div>
-        """, unsafe_allow_html=True)
+# --- ESTADOS DE SESSÃO ---
+if "df_global" not in st.session_state:
+    st.session_state["df_global"] = None
 
-# --- MOTOR DE INCERTEZA ---
-def calc_incerteza(valor, rsd_obs, p):
-    if valor is None or valor == 0: return 0
-    # uc_rel = sqrt(rsd² + u_calib² + u_pip² + u_dil²)
-    uc_rel = np.sqrt(rsd_obs**2 + p['u_calib']**2 + p['u_pip']**2 + p['u_dil']**2)
-    U = p['k'] * valor * (uc_rel / 100)
-    return U
-
-# --- AUXILIARES DE PARSE (Sua versão otimizada) ---
+# --- AUXILIARES TÉCNICOS ---
 def parse_val(val_str):
     if pd.isna(val_str): return None, False
     s = str(val_str).strip()
@@ -52,111 +33,169 @@ def normalize_analito(name):
     if pd.isna(name): return None
     return re.sub(r"\s+Dissolvido$", "", str(name).strip(), flags=re.IGNORECASE)
 
-# --- CARREGAR ESPECIFICAÇÕES ---
 @st.cache_data
 def load_catalog():
     try:
         with open('catalogo_especificacoes.json', 'r', encoding='utf-8') as f:
             return json.load(f)
-    except: return {}
+    except:
+        return {}
 
-catalog = load_catalog()
-
-# --- SIDEBAR: PARÂMETROS DE INCERTEZA ---
+# --- SIDEBAR (LOGO E NAVEGAÇÃO) ---
 with st.sidebar:
-    st.header("⚙️ Parâmetros Metrológicos")
-    p = {
-        'u_calib': st.number_input("u_calib (%)", 0.0, 5.0, 1.5),
-        'u_pip': st.number_input("u_pipetagem (%)", 0.0, 5.0, 2.5),
-        'u_dil': st.number_input("u_diluição (%)", 0.0, 5.0, 0.8),
-        'k': st.number_input("Fator k (95% Conf.)", 1.0, 3.0, 2.0),
-        'rsd_padrao': st.number_input("RSD Médio ICP (%)", 0.1, 10.0, 2.0),
-        'rpd_max': st.number_input("Tolerância RPD (%)", 1.0, 50.0, 20.0)
-    }
+    LOGO_PATH = Path("assets/operalab_logo.png")
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), use_container_width=True) # Logo maior no topo
+    else:
+        st.title("OPERALAB")
+    
     st.divider()
+    st.subheader("Menu de Funcionalidades")
+    modulo = st.radio(
+        "Selecione a operação:",
+        ["📥 Carregar Dados", "📊 Avaliação de Resultados", "⚖️ Legislação & Incerteza"]
+    )
+    
+    st.divider()
+    if st.session_state["df_global"] is not None:
+        st.success("Dados carregados em memória.")
+    else:
+        st.info("Aguardando upload de dados.")
+
+# --- MÓDULO 0: CARREGAMENTO ---
+if modulo == "📥 Carregar Dados":
     st.header("Entrada de Dados")
-    file = st.file_uploader("Arquivo (Excel/CSV)", type=["xlsx","csv"])
-    pasted = st.text_area("Ou cole a tabela aqui", height=100)
-
-# --- PROCESSAMENTO ---
-df_in = None
-if file:
-    df_in = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-elif pasted:
-    for sep in ['\t', ';', ',']:
-        try:
-            df_temp = pd.read_csv(io.StringIO(pasted), sep=sep)
-            if len(df_temp.columns) >= 3:
-                df_in = df_temp
-                break
-        except: pass
-
-if df_in is not None:
-    # Preparação Global
-    df_in['Valor_num'], df_in['Censurado'] = zip(*df_in['Valor'].map(parse_val))
-    df_in['V_mgL'] = df_in.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
-    df_in['Analito_base'] = df_in['Análise'].map(normalize_analito)
-    df_in['U_exp'] = df_in['V_mgL'].apply(lambda x: calc_incerteza(x, p['rsd_padrao'], p))
-
-    aba1, aba2, aba3 = st.tabs(["🔍 Avaliação de Lote (Diss x Tot)", "⚖️ Legislação", "👥 Duplicatas"])
-
-    with aba1:
-        st.subheader("Dissolvido vs Total (Com Incerteza)")
-        D = df_in[df_in['Método de Análise'].str.contains('Dissolvidos', case=False, na=False)].copy()
-        T = df_in[df_in['Método de Análise'].str.contains('Totais', case=False, na=False)].copy()
-        merged = pd.merge(D, T, on=['Id', 'Analito_base'], suffixes=('_diss', '_tot'))
+    col1, col2 = st.columns(2)
+    with col1:
+        file = st.file_uploader("Upload de arquivo (Excel/CSV)", type=["xlsx","csv"])
+    with col2:
+        pasted = st.text_area("Ou cole aqui (separado por TAB ou ponto-e-vírgula)", height=150)
+    
+    if st.button("Processar e Armazenar Dados", type="primary"):
+        df_temp = None
+        if file:
+            df_temp = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+        elif pasted:
+            for sep in ['\t', ';', ',']:
+                try:
+                    df_check = pd.read_csv(io.StringIO(pasted), sep=sep)
+                    if len(df_check.columns) >= 3:
+                        df_temp = df_check
+                        break
+                except: pass
         
-        # Regra: Diss > (Total + U) = ERRO. Se Diss > Total mas dentro de U = OK (variabilidade).
-        def check_diss(r):
-            if r['V_mgL_diss'] > (r['V_mgL_tot'] + r['U_exp_tot']): return "❌ NÃO CONFORME"
-            if r['V_mgL_diss'] > r['V_mgL_tot']: return "⚠️ ALERTA (Variabilidade)"
-            return "✅ OK"
-        
-        merged['Avaliação'] = merged.apply(check_diss, axis=1)
-        st.dataframe(merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'U_exp_tot', 'Avaliação']].style.apply(
-            lambda x: ['background-color: #FF3B30' if v == "❌ NÃO CONFORME" else '' for v in x], axis=1, subset=['Avaliação']
-        ))
+        if df_temp is not None:
+            # Preparação de colunas técnicas
+            df_temp['Valor_num'], df_temp['Censurado'] = zip(*df_temp['Valor'].map(parse_val))
+            df_temp['V_mgL'] = df_temp.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
+            df_temp['Analito_base'] = df_temp['Análise'].map(normalize_analito)
+            st.session_state["df_global"] = df_temp
+            st.success("Dados processados com sucesso!")
+            st.dataframe(df_temp.head())
+        else:
+            st.error("Falha ao interpretar os dados.")
 
-        # QC Ítrio
+# --- MÓDULO 1: AVALIAÇÃO DE RESULTADOS (Química e Controle) ---
+elif modulo == "📊 Avaliação de Resultados":
+    st.header("Avaliação Técnica de Resultados")
+    if st.session_state["df_global"] is None:
+        st.warning("Carregue os dados primeiro no menu ao lado.")
+    else:
+        df = st.session_state["df_global"]
+        
+        # Sub-modulo A: Totais x Dissolvidos
+        st.subheader("1. Comparação Totais vs Dissolvidos")
+        D = df[df['Método de Análise'].str.contains('Dissolvidos', case=False, na=False)].copy()
+        T = df[df['Método de Análise'].str.contains('Totais', case=False, na=False)].copy()
+        
+        if not D.empty and not T.empty:
+            merged = pd.merge(D, T, on=['Id', 'Analito_base'], suffixes=('_diss', '_tot'))
+            # Avaliação direta (sem incerteza neste módulo conforme pedido)
+            merged['Avaliação'] = np.where(merged['V_mgL_diss'] > (merged['V_mgL_tot'] * 1.1), "❌ ERRO: Diss > Tot", "✅ OK")
+            st.dataframe(merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'Avaliação']].style.apply(
+                lambda x: ['background-color: #FF3B30' if v == "❌ ERRO: Diss > Tot" else '' for v in x], axis=1, subset=['Avaliação']
+            ))
+        else:
+            st.info("Não foram encontrados pares Totais/Dissolvidos para comparação.")
+
+        # Sub-modulo B: Duplicatas
         st.divider()
-        st.subheader("QC Ítrio (70-130%)")
-        itrio = df_in[df_in['Análise'].str.contains('itrio|ítrio', case=False, na=False)]
-        if not itrio.empty:
-            itrio['QC'] = itrio['Valor_num'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ FALHA")
-            st.table(itrio[['Id', 'Nº Amostra', 'Análise', 'Valor_num', 'QC']])
-
-    with aba2:
-        st.subheader("Pré-avaliação por Legislação")
-        spec_key = st.selectbox("Selecione a Legislação", options=list(catalog.keys()))
-        if spec_key:
-            limits = catalog[spec_key]['limits_mgL']
-            df_leg = df_in[df_in['Analito_base'].isin(limits.keys())].copy()
-            df_leg['Limite'] = df_leg['Analito_base'].map(limits)
-            
-            def parecer_final(r):
-                if r['V_mgL'] > r['Limite']: return "❌ NÃO CONFORME"
-                if (r['V_mgL'] + r['U_exp']) > r['Limite']: return "🔄 REANALISAR (Incerteza)"
-                return "✅ CONFORME"
-            
-            df_leg['Parecer'] = df_leg.apply(parecer_final, axis=1)
-            st.dataframe(df_leg[['Id', 'Analito_base', 'V_mgL', 'U_exp', 'Limite', 'Parecer']])
-
-    with aba3:
-        st.subheader("Duplicatas e RPD")
-        amostras = df_in['Nº Amostra'].dropna().unique()
-        c1, c2 = st.columns(2)
-        am1 = c1.selectbox("Amostra 1", amostras)
-        am2 = c2.selectbox("Amostra 2 (Duplicata)", amostras)
+        st.subheader("2. Comparação de Duplicatas (RPD)")
+        amostras = df['Nº Amostra'].dropna().unique()
+        c1, c2, c3 = st.columns(3)
+        a1 = c1.selectbox("Amostra A", amostras, key="dup1")
+        a2 = c2.selectbox("Amostra B (Duplicata)", amostras, key="dup2")
+        tol = c3.number_input("Tolerância RPD (%)", 1.0, 50.0, 20.0)
         
-        if am1 and am2:
-            a1_data = df_in[df_in['Nº Amostra'] == am1][['Analito_base', 'V_mgL']]
-            a2_data = df_in[df_in['Nº Amostra'] == am2][['Analito_base', 'V_mgL']]
-            comp = pd.merge(a1_data, a2_data, on='Analito_base', suffixes=('_A', '_B'))
+        if a1 and a2:
+            res_a = df[df['Nº Amostra'] == a1][['Analito_base', 'V_mgL']]
+            res_b = df[df['Nº Amostra'] == a2][['Analito_base', 'V_mgL']]
+            comp = pd.merge(res_a, res_b, on='Analito_base', suffixes=('_A', '_B'))
             comp['RPD (%)'] = abs(comp['V_mgL_A'] - comp['V_mgL_B']) / ((comp['V_mgL_A'] + comp['V_mgL_B'])/2) * 100
-            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= p['rpd_max'] else "❌ FORA")
+            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= tol else "❌ FORA")
             st.dataframe(comp)
 
-else:
-    st.info("💡 Carregue um arquivo ou cole os dados para iniciar.")
+        # Sub-modulo C: QC Ítrio
+        st.divider()
+        st.subheader("3. QC Ítrio (Padrão Interno)")
+        itrio = df[df['Análise'].str.contains('itrio|ítrio', case=False, na=False)]
+        if not itrio.empty:
+            itrio['Status_QC'] = itrio['Valor_num'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ FALHA")
+            st.dataframe(itrio[['Id', 'Nº Amostra', 'Análise', 'Valor_num', 'Status_QC']])
+        else:
+            st.info("Nenhum dado de Ítrio detectado.")
 
-st.caption(f"© {datetime.now().year} | OPERALAB - Gestão de Qualidade Metrológica")
+# --- MÓDULO 2: LEGISLAÇÃO & INCERTEZA ---
+elif modulo == "⚖️ Legislação & Incerteza":
+    st.header("Avaliação Normativa com Incerteza Expandida")
+    if st.session_state["df_global"] is None:
+        st.warning("Carregue os dados primeiro no menu ao lado.")
+    else:
+        # Interface de Cálculo de Incerteza (Modulo à parte dentro da legislação)
+        with st.expander("🛠️ Parâmetros de Incerteza (Configurar para Avaliação)", expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            u_cal = col1.number_input("u_Calibração (%)", 0.0, 5.0, 1.5)
+            u_pip = col2.number_input("u_Pipetagem (%)", 0.0, 5.0, 2.5)
+            u_dil = col3.number_input("u_Diluição (%)", 0.0, 5.0, 0.8)
+            k_fat = col4.number_input("Fator k", 1.0, 3.0, 2.0)
+            rsd_i = st.slider("RSD Instrumental Médio (%)", 0.1, 10.0, 2.0)
+
+        catalog = load_catalog()
+        spec_key = st.selectbox("Selecione a Portaria/Legislação", options=list(catalog.keys()))
+        
+        if spec_key:
+            limits = catalog[spec_key]['limits_mgL']
+            df_leg = st.session_state["df_global"].copy()
+            df_leg = df_leg[df_leg['Analito_base'].isin(limits.keys())].copy()
+            df_leg['Limite_Legal'] = df_leg['Analito_base'].map(limits)
+            
+            # Cálculo da Incerteza Expandida (U)
+            def calc_U(val):
+                if val is None: return 0
+                uc_rel = np.sqrt(rsd_i**2 + u_cal**2 + u_pip**2 + u_dil**2)
+                return k_fat * val * (uc_rel / 100)
+            
+            df_leg['U_expandida'] = df_leg['V_mgL'].apply(calc_U)
+            
+            # Regra de Decisão com Incerteza
+            def julgar_conformidade(r):
+                if r['V_mgL'] > r['Limite_Legal']: 
+                    return "❌ NÃO CONFORME"
+                elif (r['V_mgL'] + r['U_expandida']) > r['Limite_Legal']: 
+                    return "🔄 REANALISAR (Zona de Incerteza)"
+                else: 
+                    return "✅ CONFORME"
+            
+            df_leg['Parecer'] = df_leg.apply(julgar_conformidade, axis=1)
+            
+            st.subheader(f"Resultado: {spec_key}")
+            st.dataframe(df_leg[['Id', 'Analito_base', 'V_mgL', 'U_expandida', 'Limite_Legal', 'Parecer']].style.apply(
+                lambda x: [
+                    'background-color: #FF3B30' if v == "❌ NÃO CONFORME" else 
+                    'background-color: #FFCC00; color: black' if v == "🔄 REANALISAR (Zona de Incerteza)" else 
+                    'background-color: #34C759' if v == "✅ CONFORME" else '' for v in x
+                ], axis=1, subset=['Parecer']
+            ))
+
+st.sidebar.markdown("---")
+st.sidebar.caption(f"© {datetime.now().year} OPERALAB v3.1")
