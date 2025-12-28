@@ -1,169 +1,136 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
+import io, re, json
 from datetime import datetime
-import plotly.express as px
-import plotly.graph_objects as go
 
-# ============================================================================
-# FUNÇÕES DE CÁLCULO
-# ============================================================================
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="OPERALAB - Gestão ICP", layout="wide")
 
-@st.cache_data
-def init_params():
-    return {
-        'u_calib': 0.015,  # % erro calibração
-        'u_pip': 0.025,    # % pipetagem
-        'u_dil': 0.008,    # % diluição
-        'k': 2.0,          # fator cobertura 95%
-        'rsd_max': 5.0,    # % max repetibilidade
-        'rec_min': 90.0,   # % recuperação mín
-        'rec_max': 110.0   # % recuperação máx
-    }
-
-def calcular_incerteza(resultado, rsd, params):
-    # Correção: Uso de **2 para potência
-    uc_rel = np.sqrt(rsd**2 + params['u_calib']**2 + params['u_pip']**2 + params['u_dil']**2)
-    U = params['k'] * resultado * uc_rel / 100
-    return uc_rel, U
-
-def gerar_decisao(resultado, limite, U, rsd, recuperacao, checklist_ok, params):
-    inferior = resultado - U
-    superior = resultado + U
-    
-    motivos = []
-    acoes = []
-    
-    # Decisão baseada na regra de decisão (Incerteza Expandida)
-    if superior <= limite:
-        decisao = "✅ CONFORME"
-        motivos.append(f"Intervalo [{inferior:.4f} - {superior:.4f}] está abaixo do limite {limite:.4f}")
-    elif inferior > limite:
-        decisao = "❌ NÃO CONFORME"
-        motivos.append(f"Resultado - U ({inferior:.4f}) excede o limite legal")
-        acoes.append("📤 Relatar não conformidade e abrir RNC")
-    else:
-        decisao = "🔄 REANALISAR"
-        motivos.append("Zona de Incerteza: O limite está dentro do intervalo de confiança.")
-        acoes.append("🔬 Repetir análise para reduzir o RSD")
-
-    # Validações de Qualidade
-    if rsd > params['rsd_max']:
-        acoes.append(f"⚠️ RSD alto ({rsd:.1f}%): Estabilidade do plasma ou nebulização instável")
-    if not (params['rec_min'] <= recuperacao <= params['rec_max']):
-        acoes.append(f"⚠️ Recuperação ({recuperacao:.1f}%) fora do range {params['rec_min']}-{params['rec_max']}%")
-    if not checklist_ok:
-        acoes.append("📋 Checklist de hardware incompleto")
-    
-    return decisao, motivos, acoes
-
-# ============================================================================
-# INTERFACE PRINCIPAL
-# ============================================================================
-
-st.set_page_config(page_title="Decisão ICP Pro", layout="wide")
-st.title("🧪 DECISÃO ICP AUTOMÁTICA v2.0")
-
-if 'params' not in st.session_state:
-    st.session_state.params = init_params()
-
-# Sidebar
-with st.sidebar:
-    st.header("⚙️ Parâmetros do Lab")
-    st.session_state.params['u_calib'] = st.number_input("u_calib (%)", 0.001, 0.50, st.session_state.params['u_calib'], 0.001, format="%.3f")
-    st.session_state.params['u_pip'] = st.number_input("u_pipetagem (%)", 0.001, 0.50, st.session_state.params['u_pip'], 0.001, format="%.3f")
-    st.session_state.params['u_dil'] = st.number_input("u_diluição (%)", 0.001, 0.50, st.session_state.params['u_dil'], 0.001, format="%.3f")
-    st.session_state.params['k'] = st.number_input("Fator k (95%)", 1.96, 3.0, st.session_state.params['k'], 0.01)
-    
-    st.divider()
-    st.header("📊 Template")
-    template = pd.DataFrame(columns=['data','metal','resultado','replicas','recuperacao','U_lab','decisao_experta'])
-    st.download_button("📥 Baixar Template CSV", template.to_csv(index=False), "template_icp.csv")
-
-# Colunas de Input
-col1, col2 = st.columns([1,1])
-
-with col1:
-    st.subheader("📈 Dados da Análise")
-    metal = st.text_input("Elemento (Metal)", "Pb")
-    limite = st.number_input("Limite Legal (mg/L)", 0.0001, 100.0, 0.10, format="%.4f")
-    resultado = st.number_input("Resultado Médio (mg/L)", 0.0000, 100.0, 0.12, format="%.4f")
-    replicas_str = st.text_input("Réplicas (ex: 0.12, 0.11, 0.13)", "0.12, 0.11, 0.13")
-    
+# --- FUNÇÕES DE PARSE E CONVERSÃO ---
+def parse_val(val_str):
+    if pd.isna(val_str): return None, False
+    s = str(val_str).strip().replace(',', '.')
+    cens = s.startswith('<')
+    s_clean = s.replace('<', '').strip()
     try:
-        replicas = [float(x.strip()) for x in replicas_str.split(',') if x.strip()]
-        rsd = (np.std(replicas, ddof=1) / np.mean(replicas) * 100) if len(replicas) > 1 else 0.0
+        v = float(s_clean)
     except:
-        st.error("Erro no formato das réplicas")
-        rsd = 0.0
+        v = None
+    return v, cens
 
-with col2:
-    st.subheader("🔬 Controles de Qualidade")
-    recuperacao = st.number_input("Recuperação do Fortificado (%)", 0.0, 200.0, 95.0)
-    
-    with st.expander("✅ Checklist Diário", expanded=True):
-        blank_ok = st.checkbox("Blank < Limite de Detecção", value=True)
-        calib_ok = st.checkbox("Curva R² > 0.999", value=True)
-        matriz_ok = st.checkbox("Efeito Matriz Controlado", value=True)
-        interfer_ok = st.checkbox("Gás de Colisão/Reação OK", value=True)
-    
-    checklist_ok = all([blank_ok, calib_ok, matriz_ok, interfer_ok])
+def to_mg_per_L(val, unit):
+    if val is None or pd.isna(unit): return None
+    u = str(unit).strip().lower()
+    if u == 'mg/l': return val
+    if u in ['µg/l', 'ug/l']: return val / 1000.0
+    return val
 
-# Execução
-st.divider()
-if st.button("🚀 ANALISAR & GERAR PARECER", type="primary"):
-    uc_rel, U = calcular_incerteza(resultado, rsd, st.session_state.params)
-    decisao, motivos, acoes = gerar_decisao(resultado, limite, U, rsd, recuperacao, checklist_ok, st.session_state.params)
-    
-    # Métricas
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Resultado", f"{resultado:.4f}")
-    m2.metric("Incerteza (U)", f"± {U:.4f}")
-    m3.metric("RSD", f"{rsd:.2f}%")
-    m4.metric("Recuperação", f"{recuperacao:.1f}%")
+def normalize_analito(name):
+    if pd.isna(name): return None
+    return re.sub(r"\s+Dissolvido$", "", str(name).strip(), flags=re.IGNORECASE)
 
-    st.markdown(f"## {decisao}")
-    
-    c_res1, c_res2 = st.columns(2)
-    with c_res1:
-        st.info("**Parecer Técnico:**\n\n" + "\n".join([f"• {m}" for m in motivos]))
-    with c_res2:
-        if acoes:
-            st.warning("**Ações Recomendadas:**\n\n" + "\n".join([f"• {a}" for a in acoes]))
+# --- MOTOR DE INCERTEZA ---
+def calcular_incerteza(valor, rsd_obs, p):
+    if valor is None: return 0
+    # incerteza combinada: sqrt(rsd² + u_calib² + u_pip² + u_dil²)
+    uc_rel = np.sqrt(rsd_obs**2 + p['u_calib']**2 + p['u_pip']**2 + p['u_dil']**2)
+    U = p['k'] * valor * (uc_rel / 100)
+    return U
 
-    # Gráfico de Faixa de Incerteza
-    fig = go.Figure()
-    # Faixa de Incerteza
-    fig.add_trace(go.Scatter(
-        x=[resultado - U, resultado + U], y=[1, 1],
-        mode='lines+markers', name='Intervalo de Confiança',
-        line=dict(color='blue', width=8), marker=dict(size=12)
-    ))
-    # Limite Legal
-    fig.add_vline(x=limite, line_dash="dash", line_color="red", 
-                 annotation_text="LIMITE", annotation_position="top left")
-    
-    fig.update_layout(title="Posicionamento do Resultado vs Limite", height=250, 
-                      xaxis_title="Concentração (mg/L)", yaxis_showticklabels=False)
-    st.plotly_chart(fig, use_container_width=True)
+# --- CARREGAR CATÁLOGO ---
+@st.cache_data
+def load_catalog():
+    try:
+        with open('catalogo_especificacoes.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
 
-    # Log para Download
-    log_df = pd.DataFrame([{
-        'Data': datetime.now().strftime("%Y-%m-%d %H:%M"),
-        'Metal': metal, 'Resultado': resultado, 'U': U, 'L_Legal': limite,
-        'Decisao': decisao, 'RSD': rsd, 'Recup': recuperacao
-    }])
-    st.download_button("💾 Exportar Laudo Técnico", log_df.to_csv(index=False), f"Laudo_{metal}.csv")
+catalog = load_catalog()
 
-# Aba de Calibração/Validação
-st.divider()
-st.header("🔧 VALIDAÇÃO DE MÉTODO (Batch)")
-uploaded_csv = st.file_uploader("Upload de arquivo de validação para ajuste de bias")
+# --- INTERFACE SIDEBAR ---
+with st.sidebar:
+    st.title("⚙️ Configurações Lab")
+    p = {
+        'u_calib': st.number_input("u_Calibração (%)", 0.0, 5.0, 1.5),
+        'u_pip': st.number_input("u_Pipetagem (%)", 0.0, 5.0, 2.5),
+        'u_dil': st.number_input("u_Diluição (%)", 0.0, 5.0, 0.8),
+        'k': st.number_input("Fator k (95%)", 1.0, 3.0, 2.0),
+        'rpd_max': st.number_input("RPD Máx (%)", 1.0, 50.0, 20.0)
+    }
+    st.divider()
+    uploaded_file = st.file_uploader("Upload CSV/Excel", type=["csv", "xlsx"])
 
-if uploaded_csv:
-    df_val = pd.read_csv(uploaded_csv)
-    # Lógica de validação em lote (similar ao que você criou, mas protegida contra erros)
-    st.success("Dados carregados com sucesso. Bias médio calculado.")
-    st.dataframe(df_val.head())
+# --- LÓGICA PRINCIPAL ---
+if uploaded_file:
+    if uploaded_file.name.endswith('.csv'):
+        df_raw = pd.read_csv(uploaded_file)
+    else:
+        df_raw = pd.read_excel(uploaded_file)
 
-st.caption("Desenvolvido para Laboratórios de Análise Ambiental | ISO 17025 Compliant")
+    # Pré-processamento
+    df_raw['Valor_num'], df_raw['Censurado'] = zip(*df_raw['Valor'].map(parse_val))
+    df_raw['V_mgL'] = df_raw.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
+    df_raw['Analito_base'] = df_raw['Análise'].map(normalize_analito)
+
+    aba1, aba2, aba3 = st.tabs(["🧪 Validação Técnica", "⚖️ Legislação", "👥 Duplicatas"])
+
+    with aba1:
+        st.subheader("Dissolvido vs Total & QC Ítrio")
+        # Comparação Dissolvido x Total
+        D = df_raw[df_raw['Método de Análise'].str.contains('Dissolvidos', na=False)].copy()
+        T = df_raw[df_raw['Método de Análise'].str.contains('Totais', na=False)].copy()
+        merged = pd.merge(D, T, on=['Id', 'Analito_base'], suffixes=('_diss', '_tot'))
+        
+        merged['U_tot'] = merged['V_mgL_tot'].map(lambda x: calcular_incerteza(x, 2.0, p)) # assumindo RSD médio 2%
+        merged['Status'] = np.where(merged['V_mgL_diss'] > (merged['V_mgL_tot'] + merged['U_tot']), 'NÃO CONFORME', 'OK')
+        
+        st.dataframe(merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'U_tot', 'Status']].style.apply(
+            lambda x: ['background-color: #FF3B30' if v == 'NÃO CONFORME' else '' for v in x], axis=1, subset=['Status']
+        ))
+
+        # QC Ítrio
+        itrio = df_raw[df_raw['Análise'].str.contains('ítrio|itrio', case=False, na=False)]
+        if not itrio.empty:
+            st.divider()
+            st.subheader("Controle Padrão Interno (Ítrio)")
+            itrio['Status_QC'] = itrio['Valor_num'].map(lambda x: 'OK' if 70 <= x <= 130 else 'NÃO CONFORME')
+            st.dataframe(itrio[['Id', 'Nº Amostra', 'Análise', 'Valor_num', 'Status_QC']])
+
+    with aba2:
+        st.subheader("Avaliação por Legislação")
+        spec_key = st.selectbox("Selecione a Portaria", options=list(catalog.keys()))
+        if spec_key:
+            limits = catalog[spec_key]['limits_mgL']
+            # Filtra apenas o que tem limite e aplica regra de incerteza
+            df_leg = df_raw[df_raw['Analito_base'].isin(limits.keys())].copy()
+            df_leg['Limite'] = df_leg['Analito_base'].map(limits)
+            df_leg['U'] = df_leg['V_mgL'].map(lambda x: calcular_incerteza(x, 3.0, p))
+            
+            def julgar(r):
+                if r['V_mgL'] > r['Limite']: return "❌ NÃO CONFORME"
+                if (r['V_mgL'] + r['U']) > r['Limite']: return "🔄 REANALISAR (Zona de Incerteza)"
+                return "✅ CONFORME"
+            
+            df_leg['Parecer'] = df_leg.apply(julgar, axis=1)
+            st.dataframe(df_leg[['Id', 'Analito_base', 'V_mgL', 'U', 'Limite', 'Parecer']])
+
+    with aba3:
+        st.subheader("Cálculo de RPD (Duplicatas)")
+        amostras = df_raw['Nº Amostra'].unique()
+        c1, c2 = st.columns(2)
+        a1 = c1.selectbox("Amostra Original", amostras)
+        a2 = c2.selectbox("Duplicata", amostras)
+        
+        if a1 and a2:
+            res_a1 = df_raw[df_raw['Nº Amostra'] == a1][['Analito_base', 'V_mgL']]
+            res_a2 = df_raw[df_raw['Nº Amostra'] == a2][['Analito_base', 'V_mgL']]
+            comp = pd.merge(res_a1, res_a2, on='Analito_base', suffixes=('_1', '_2'))
+            comp['RPD'] = abs(comp['V_mgL_1'] - comp['V_mgL_2']) / ((comp['V_mgL_1'] + comp['V_mgL_2'])/2) * 100
+            comp['Status'] = comp['RPD'].map(lambda x: 'OK' if x <= p['rpd_max'] else 'EXCEDE LIMITE')
+            st.dataframe(comp)
+
+else:
+    st.info("Aguardando upload de arquivo para iniciar as avaliações.")
