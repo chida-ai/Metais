@@ -111,7 +111,7 @@ with st.sidebar:
     if st.button("👥 Duplicatas"): st.session_state.pagina = "👥 Duplicatas"
     
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.caption(f"Log: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    st.caption(f"Log: {datetime.now().strftime('%H:%M:%S')}")
 
 # --- MÓDULOS ---
 
@@ -140,7 +140,7 @@ if st.session_state.pagina == "📥 Inserir Dados":
             df_temp['V_mgL'] = df_temp.apply(lambda r: to_mg_per_L(r['Valor_num'], r['Unidade de Medida']), axis=1)
             df_temp['Analito_base'] = df_temp['Análise'].map(normalize_analito)
             st.session_state["df_global"] = df_temp
-            st.success("Dados carregados.")
+            st.success("Dados carregados com sucesso.")
         else: st.error("Erro na leitura dos dados.")
 
 elif st.session_state.pagina == "🧪 Avaliação de Lote":
@@ -158,18 +158,17 @@ elif st.session_state.pagina == "🧪 Avaliação de Lote":
             merged['Avaliação'] = np.where(merged['V_mgL_diss'] > (merged['V_mgL_tot'] * 1.05), "❌ NÃO CONFORME", "✅ OK")
             
             res_disp = merged[['Id', 'Analito_base', 'V_mgL_diss', 'V_mgL_tot', 'Avaliação']].copy()
-            res_disp.columns = ['Id', 'Analito', 'Conc. Diss (mg/L)', 'Conc. Total (mg/L)', 'Status']
+            res_disp.columns = ['ID Amostra', 'Analito', 'Conc. Diss (mg/L)', 'Conc. Total (mg/L)', 'Parecer']
             st.dataframe(res_disp, use_container_width=True)
         
         st.divider()
-        st.subheader("🎯 Controle de Recuperação (Ítrio)")
+        st.subheader("🎯 Recuperação de Ítrio (%)")
         itrio = df[df['Análise'].str.contains('itrio|ítrio', case=False, na=False)]
         if not itrio.empty:
             it_disp = itrio[['Id', 'Nº Amostra', 'Valor_num']].copy()
-            it_disp.columns = ['Id', 'Nº Amostra', 'Recuperação (%)']
-            it_disp['Parecer'] = it_disp['Recuperação (%)'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ REPROVADO")
-            # Correção do KeyError: Colunas devem bater exatamente com o DataFrame it_disp
-            st.table(it_disp[['Id', 'Nº Amostra', 'Recuperação (%)', 'Parecer']])
+            it_disp['Parecer'] = it_disp['Valor_num'].apply(lambda x: "✅ OK" if 70 <= x <= 130 else "❌ REPROVADO")
+            it_disp.columns = ['ID', 'Nº Amostra', 'Recuperação (%)', 'Status Técnico']
+            st.table(it_disp)
 
 elif st.session_state.pagina == "⚖️ Legislação & U":
     st.title("⚖️ Conformidade Legal & Incerteza")
@@ -183,7 +182,7 @@ elif st.session_state.pagina == "⚖️ Legislação & U":
                  'k': 2.0, 'rsd': 2.0}
         
         catalog = load_catalog()
-        spec_key = st.selectbox("Legislação:", options=list(catalog.keys()))
+        spec_key = st.selectbox("Legislação de Referência:", options=list(catalog.keys()))
         
         if spec_key:
             lims = catalog[spec_key]['limits_mgL']
@@ -199,7 +198,7 @@ elif st.session_state.pagina == "⚖️ Legislação & U":
             
             df_leg['Parecer'] = df_leg.apply(julgar, axis=1)
             final = df_leg[['Id', 'Analito_base', 'V_mgL', 'U', 'Limite', 'Parecer']].copy()
-            final.columns = ['Id', 'Analito', 'Resultado (mg/L)', 'Incerteza (±)', 'VMP (mg/L)', 'Status']
+            final.columns = ['ID', 'Analito', 'Resultado (mg/L)', 'Incerteza (±)', 'VMP (mg/L)', 'Status Final']
             st.dataframe(final, use_container_width=True)
 
 elif st.session_state.pagina == "👥 Duplicatas":
@@ -218,4 +217,8 @@ elif st.session_state.pagina == "👥 Duplicatas":
             comp = pd.merge(a1_d, a2_d, on='Analito_base', suffixes=('_A', '_B'))
             comp['RPD (%)'] = abs(comp['V_mgL_A'] - comp['V_mgL_B']) / ((comp['V_mgL_A'] + comp['V_mgL_B'])/2) * 100
             comp['Avaliação'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
-            st.dataframe(comp, use_container_width=True)
+            
+            # --- PADRONIZAÇÃO DAS COLUNAS SOLICITADA ---
+            comp_final = comp.copy()
+            comp_final.columns = ['Analito', 'Conc. Original (mg/L)', 'Conc. Duplicata (mg/L)', 'RPD (%)', 'Status']
+            st.dataframe(comp_final, use_container_width=True)
