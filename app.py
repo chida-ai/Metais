@@ -1,4 +1,3 @@
-
 # app.py (diagnóstico mínimo)
 import streamlit as st
 
