@@ -17,9 +17,14 @@ def limpar_texto(t):
 
 def parse_val(v):
     if pd.isna(v): return None, False
-    s = str(v).replace('<','').replace('.', '').replace(',', '.')
-    try: return float(s), str(v).startswith('<')
-    except: return None, False
+    s_orig = str(v).strip()
+    is_less_than = s_orig.startswith('<')
+    # Remove o < e limpa a pontuação para converter em número
+    s = s_orig.replace('<','').replace('.', '').replace(',', '.')
+    try: 
+        return float(s), is_less_than
+    except: 
+        return None, False
 
 def load_catalog():
     try:
