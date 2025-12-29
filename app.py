@@ -38,6 +38,7 @@ with st.sidebar:
     if st.button("📥 Inserir Dados"): st.session_state.pagina = "📥 Inserir Dados"
     if st.button("🧪 Avaliação de Lote"): st.session_state.pagina = "🧪 Avaliação de Lote"
     if st.button("⚖️ Legislação"): st.session_state.pagina = "⚖️ Legislação"
+    if st.button("👥 Duplicatas"): st.session_state.pagina = "👥 Duplicatas"
 
 # --- PÁGINAS ---
 
@@ -105,3 +106,20 @@ elif st.session_state.pagina == "⚖️ Legislação":
         res = df_l[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'VMP_Legislação', 'Unid_Leg', 'Parecer']]
         res.columns = ['ID', 'Analito', 'Valor LIMS', 'Unid LIMS', 'VMP Leg.', 'Unid Leg.', 'Parecer']
         st.dataframe(res, use_container_width=True)
+
+elif st.session_state.pagina == "👥 Duplicatas":
+    st.title("👥 Controle de Precisão (RPD)")
+    df = st.session_state["df_global"]
+    if df is not None:
+        amostras = df['Nº Amostra'].dropna().unique()
+        c1, c2 = st.columns(2)
+        a1 = c1.selectbox("Amostra Original", amostras)
+        a2 = c2.selectbox("Duplicata", amostras)
+        if a1 and a2:
+            d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
+            d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+            comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
+            comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
+            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
+            res = comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']]
+            st.dataframe(res, use_container_width=True)
