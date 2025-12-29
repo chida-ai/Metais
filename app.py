@@ -32,11 +32,12 @@ if "pagina" not in st.session_state: st.session_state["pagina"] = "📥 Inserir 
 
 # --- SIDEBAR ---
 with st.sidebar:
+    LOGO_PATH = Path("assets/operalab_logo.png")
+    if LOGO_PATH.exists(): st.image(str(LOGO_PATH), use_container_width=True)
     st.markdown("<h2 style='color:#FF0000;'>Data Support</h2><hr>", unsafe_allow_html=True)
     if st.button("📥 Inserir Dados"): st.session_state.pagina = "📥 Inserir Dados"
-    if st.button("🧪 Avaliação de Lote"): st.session_state.pagina = "🧪 Avaliação de Lote"
+    if st.button("🧪 Avaliação de Lote (QC)"): st.session_state.pagina = "🧪 Avaliação de Lote"
     if st.button("⚖️ Legislação"): st.session_state.pagina = "⚖️ Legislação"
-    if st.button("👥 Duplicatas"): st.session_state.pagina = "👥 Duplicatas"
 
 # --- PÁGINAS ---
 
@@ -52,35 +53,65 @@ if st.session_state.pagina == "📥 Inserir Dados":
         st.success("Dados carregados com sucesso!")
 
 elif st.session_state.pagina == "🧪 Avaliação de Lote":
-    st.title("🧪 Avaliação: Dissolvido vs Total")
+    st.title("🧪 Avaliação Técnica e Controle de Qualidade")
     df = st.session_state["df_global"]
+    
     if df is not None:
-        # 1. QC ÍTRIO (Isolado)
+        # 1. QC ÍTRIO
         qc_itrio = df[df['key_busca'].str.contains('itrio', na=False)]
         if not qc_itrio.empty:
-            st.subheader("🔍 Controle de Qualidade (Ítrio)")
+            st.subheader("🔍 1. Controle de Qualidade (Ítrio)")
             st.dataframe(qc_itrio[['Id', 'Análise', 'Valor', 'Unidade de Medida']], use_container_width=True)
 
-        # 2. COMPARATIVO D vs T (Removendo o Ítrio da conta)
+        st.divider()
+
+        # 2. COMPARATIVO D vs T (Removendo o Ítrio)
         df_analitos = df[~df['key_busca'].str.contains('itrio', na=False)].copy()
-        
         D = df_analitos[df_analitos['Método de Análise'].str.contains('Diss', case=False, na=False)].copy()
         T = df_analitos[df_analitos['Método de Análise'].str.contains('Tot', case=False, na=False)].copy()
         
         if not D.empty and not T.empty:
-            st.subheader("📊 Comparação de Metais (D vs T)")
+            st.subheader("📊 2. Comparação Metais (Dissolvido vs Total)")
             m = pd.merge(D, T, on=['Id', 'key_busca'], suffixes=('_D', '_T'))
-            
-            # Margem de segurança de 10% comum em laboratórios para variação analítica
-            m['Status'] = np.where(m['V_calculo_mg_D'] > (m['V_calculo_mg_T'] * 1.1), "❌ D > T", "✅ OK")
+            m['Status'] = np.where(m['V_calculo_mg_D'] > (m['V_calculo_mg_T'] * 1.05), "❌ D > T", "✅ OK")
             
             for id_amostra in m['Id'].unique():
                 temp = m[m['Id']==id_amostra]
                 status_final = "❌ REPROVADO" if any(temp['Status'] == "❌ D > T") else "✅ APROVADO"
                 st.write(f"**Amostra {id_amostra}:** {status_final}")
 
-            res = m[['Id', 'Análise_D', 'Valor_D', 'Valor_T', 'Status']]
-            st.dataframe(res, use_container_width=True)
+            st.dataframe(m[['Id', 'Análise_D', 'Valor_D', 'Unidade de Medida_D', 'Valor_T', 'Unidade de Medida_T', 'Status']], use_container_width=True)
+
+        st.divider()
+
+        # 3. DUPLICATAS (RPD) - AGORA DENTRO DA AVALIAÇÃO DE LOTE
+        st.subheader("👥 3. Controle de Precisão (RPD)")
+        amostras_list = sorted(df['Nº Amostra'].dropna().unique())
+        
+        if len(amostras_list) >= 2:
+            with st.container():
+                c1, c2, c3 = st.columns(3)
+                a1 = c1.selectbox("Amostra Original", amostras_list)
+                a2 = c2.selectbox("Duplicata", amostras_list)
+                limite_rpd = c3.number_input("Limite RPD (%)", value=20)
+
+                if a1 != a2:
+                    d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
+                    d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+                    
+                    comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
+                    if not comp.empty:
+                        comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / 
+                                          ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
+                        comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= limite_rpd else "❌ FALHA")
+                        
+                        st.dataframe(comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']], use_container_width=True)
+                    else:
+                        st.info("Nenhum parâmetro em comum para calcular RPD.")
+                else:
+                    st.warning("Selecione amostras diferentes para o cálculo de RPD.")
+        else:
+            st.info("Necessário pelo menos 2 números de amostras diferentes para avaliar duplicatas.")
 
 elif st.session_state.pagina == "⚖️ Legislação":
     st.title("⚖️ Conformidade Legal")
@@ -92,6 +123,9 @@ elif st.session_state.pagina == "⚖️ Legislação":
         
         df_l = df[~df['key_busca'].str.contains('itrio', na=False)].copy()
         df_l['VMP_Legislação'] = df_l['key_busca'].map(limites)
+        unid_leg = "mg/kg" if "Solo" in escolha or "Resíduos" in escolha else "mg/L"
+        df_l['Unid_Leg'] = unid_leg
+        
         df_l = df_l.dropna(subset=['VMP_Legislação'])
         df_l['Parecer'] = np.where(df_l['V_calculo_mg'] > df_l['VMP_Legislação'], "❌ FORA", "✅ OK")
 
@@ -100,34 +134,4 @@ elif st.session_state.pagina == "⚖️ Legislação":
             status = "❌ REPROVADA" if any(df_l[df_l['Id']==id_amostra]['Parecer'] == "❌ FORA") else "✅ APROVADA"
             st.info(f"ID: {id_amostra} -> {status}")
 
-        st.dataframe(df_l[['Id', 'Análise', 'Valor', 'VMP_Legislação', 'Parecer']], use_container_width=True)
-
-elif st.session_state.pagina == "👥 Duplicatas":
-    st.title("👥 Controle de Precisão (RPD)")
-    df = st.session_state["df_global"]
-    if df is not None:
-        st.info("O RPD é calculado apenas para analitos presentes em ambas as amostras (Original e Duplicata).")
-        
-        with st.expander("⚙️ Configurar Comparação", expanded=True):
-            c1, c2, c3 = st.columns(3)
-            amostras = sorted(df['Nº Amostra'].dropna().unique())
-            a1 = c1.selectbox("Amostra Original", amostras)
-            a2 = c2.selectbox("Duplicata", amostras)
-            limite_rpd = c3.number_input("Limite Máximo RPD (%)", value=20)
-
-        if a1 and a2 and a1 != a2:
-            d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor']]
-            d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor']]
-            
-            comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
-            
-            # Cálculo RPD: |V1-V2| / Média * 100
-            comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / 
-                              ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
-            
-            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= limite_rpd else "❌ FALHA")
-            
-            st.subheader(f"Resultado RPD: {a1} vs {a2}")
-            st.dataframe(comp[['Análise', 'Valor_Ori', 'Valor_Dup', 'RPD (%)', 'Status']], use_container_width=True)
-        elif a1 == a2:
-            st.warning("Selecione amostras diferentes para calcular o RPD.")
+        st.dataframe(df_l[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'VMP_Legislação', 'Unid_Leg', 'Parecer']], use_container_width=True)
