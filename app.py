@@ -12,10 +12,11 @@ st.set_page_config(page_title="Data Support - Lab Ambiental", layout="wide")
 st.markdown("""<style>
     .stApp { background-color: #0E1117; color: #FFFFFF; }
     [data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #374151; }
-    .stButton button { width: 100%; text-align: left; }
+    div.stButton > button:first-child { width: 100%; text-align: left; background-color: #1F2937; color: white; border: 1px solid #374151; }
+    div.stButton > button:hover { background-color: #FF0000 !important; }
 </style>""", unsafe_allow_html=True)
 
-# --- FUNÇÕES ---
+# --- FUNÇÕES TÉCNICAS ---
 def limpar_texto(t):
     if pd.isna(t): return ""
     t = str(t).strip().lower()
@@ -41,60 +42,75 @@ if "pagina" not in st.session_state: st.session_state["pagina"] = "📥 Inserir 
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("Data Support")
+    LOGO_PATH = Path("assets/operalab_logo.png")
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), use_container_width=True)
+    
+    st.markdown("<h2 style='color:#FF0000;'>Data Support</h2><hr>", unsafe_allow_html=True)
     if st.button("📥 Inserir Dados"): st.session_state.pagina = "📥 Inserir Dados"
     if st.button("🧪 Avaliação de Lote"): st.session_state.pagina = "🧪 Avaliação de Lote"
-    if st.button("⚖️ Legislação & U"): st.session_state.pagina = "⚖️ Legislação & U"
+    if st.button("⚖️ Legislação"): st.session_state.pagina = "⚖️ Legislação"
+    if st.button("👥 Duplicatas"): st.session_state.pagina = "👥 Duplicatas"
 
 # --- PÁGINAS ---
 
 if st.session_state.pagina == "📥 Inserir Dados":
-    st.title("📥 Entrada de Dados")
-    pasted = st.text_area("Cole as colunas do LIMS", height=200)
+    st.title("📥 Entrada de Dados (LIMS)")
+    pasted = st.text_area("Cole os dados aqui", height=250)
     if st.button("Processar Dados", type="primary"):
         df = pd.read_csv(io.StringIO(pasted), sep=None, engine='python')
         df['V_num'], _ = zip(*df['Valor'].map(parse_val))
-        
-        # LOGICA DE UNIDADE EXPLICITA
-        df['Unidade_Original'] = df['Unidade de Medida'].astype(str)
-        df['Conversão'] = df['Unidade_Original'].apply(lambda x: "÷ 1000" if 'ug' in x.lower() else "x 1")
-        df['V_mg'] = df.apply(lambda r: r['V_num']/1000 if 'ug' in r['Unidade_Original'].lower() else r['V_num'], axis=1)
-        
+        # Normalização interna para mg (apenas para cálculo), mas mantém original para exibição
+        df['V_calculo_mg'] = df.apply(lambda r: r['V_num']/1000 if 'ug' in str(r['Unidade de Medida']).lower() else r['V_num'], axis=1)
         df['key_busca'] = df['Análise'].map(limpar_texto)
         st.session_state["df_global"] = df
-        st.success("Dados processados com memória de unidade.")
+        st.success("Dados carregados com sucesso!")
 
 elif st.session_state.pagina == "🧪 Avaliação de Lote":
-    st.title("🧪 Conferência: Dissolvido vs Total")
+    st.title("🧪 Avaliação: Dissolvido vs Total")
     df = st.session_state["df_global"]
     if df is not None:
         D = df[df['Método de Análise'].str.contains('Diss', case=False, na=False)].copy()
         T = df[df['Método de Análise'].str.contains('Tot', case=False, na=False)].copy()
-        
         if not D.empty and not T.empty:
             m = pd.merge(D, T, on=['Id', 'key_busca'], suffixes=('_D', '_T'))
-            m['Status'] = np.where(m['V_mg_D'] > m['V_mg_T'], "❌ D > T", "✅ OK")
-            
-            # Mostrando as unidades originais para sua segurança
-            res = m[['Id', 'Análise_D', 'V_num_D', 'Unidade_Original_D', 'V_num_T', 'Unidade_Original_T', 'Status']]
-            res.columns = ['ID', 'Analito', 'Valor D', 'Unid D', 'Valor T', 'Unid T', 'Avaliação']
+            # Comparação sempre em mg para não errar unidade
+            m['Status'] = np.where(m['V_calculo_mg_D'] > m['V_calculo_mg_T'], "❌ NÃO CONFORME", "✅ OK")
+            res = m[['Id', 'Análise_D', 'Valor_D', 'Unidade de Medida_D', 'Valor_T', 'Unidade de Medida_T', 'Status']]
+            res.columns = ['ID', 'Analito', 'Valor D', 'Unid D', 'Valor T', 'Unid T', 'Status']
             st.dataframe(res, use_container_width=True)
 
-elif st.session_state.pagina == "⚖️ Legislação & U":
-    st.title("⚖️ Verificação de Limites")
+elif st.session_state.pagina == "⚖️ Legislação":
+    st.title("⚖️ Conformidade Legal")
     catalog = load_catalog()
     df = st.session_state["df_global"]
     if df is not None:
-        escolha = st.selectbox("Norma:", list(catalog.keys()))
+        escolha = st.selectbox("Selecione a Legislação:", list(catalog.keys()))
         limites = {limpar_texto(k): v for k, v in catalog[escolha]['limits_mgL'].items()}
-        
         df_l = df.copy()
-        df_l['VMP_mg'] = df_l['key_busca'].map(limites)
-        df_l = df_l.dropna(subset=['VMP_mg'])
+        df_l['VMP_Legislação'] = df_l['key_busca'].map(limites)
+        df_l = df_l.dropna(subset=['VMP_Legislação'])
         
-        df_l['Parecer'] = np.where(df_l['V_mg'] > df_l['VMP_mg'], "❌ REPROVADO", "✅ OK")
+        # O sistema compara o valor normalizado com o limite da legislação (que está em mg)
+        df_l['Parecer'] = np.where(df_l['V_calculo_mg'] > df_l['VMP_Legislação'], "❌ REPROVADO", "✅ OK")
         
-        # Aqui você vê o valor original, a unidade e o valor já convertido
-        res = df_l[['Id', 'Análise', 'V_num', 'Unidade_Original', 'V_mg', 'VMP_mg', 'Parecer']]
-        res.columns = ['ID', 'Analito', 'Valor LIMS', 'Unid. LIMS', 'Valor (mg)', 'VMP (mg)', 'Parecer']
+        res = df_l[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'VMP_Legislação', 'Parecer']]
+        res.columns = ['ID', 'Analito', 'Valor LIMS', 'Unid LIMS', 'VMP (mg)', 'Parecer']
         st.dataframe(res, use_container_width=True)
+
+elif st.session_state.pagina == "👥 Duplicatas":
+    st.title("👥 Controle de Precisão (RPD)")
+    df = st.session_state["df_global"]
+    if df is not None:
+        amostras = df['Nº Amostra'].dropna().unique()
+        c1, c2 = st.columns(2)
+        a1 = c1.selectbox("Amostra Original", amostras)
+        a2 = c2.selectbox("Duplicata", amostras)
+        if a1 and a2:
+            d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
+            d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+            comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
+            comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
+            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
+            res = comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']]
+            st.dataframe(res, use_container_width=True)
