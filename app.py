@@ -14,17 +14,18 @@ def limpar_texto(t):
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 def parse_val(v):
-    """Extrai o número e identifica se existe o sinal de menor que <"""
     if pd.isna(v): return None, False
-    s_orig = str(v).strip().replace(',', '.')
+    s_orig = str(v).strip()
     is_less_than = '<' in s_orig
-    # Remove caracteres não numéricos exceto o ponto decimal
-    s_num = re.sub(r'[^0-9.]', '', s_orig)
+    
+    # Se o valor for "< 0,3", ele remove o "<", 
+    # troca a vírgula por ponto e vira o número 0.3
+    s_limpo = s_orig.replace('<', '').replace(' ', '').replace(',', '.')
+    
     try: 
-        return float(s_num), is_less_than
+        return float(s_limpo), is_less_than
     except: 
         return None, False
-
 # --- INTERFACE ---
 st.set_page_config(page_title="Data Support - Lab Ambiental", layout="wide")
 
@@ -32,6 +33,9 @@ if "df_global" not in st.session_state: st.session_state["df_global"] = None
 if "pagina" not in st.session_state: st.session_state["pagina"] = "📥 Inserir Dados"
 
 with st.sidebar:
+    LOGO_PATH = Path("assets/operalab_logo.png")
+    if LOGO_PATH.exists(): st.image(str(LOGO_PATH), use_container_width=True)
+    st.markdown("<h2 style='color:#FF0000;'>Data Support</h2><hr>", unsafe_allow_html=True)
     st.markdown("<h2 style='color:#FF0000;'>Data Support</h2><hr>", unsafe_allow_html=True)
     if st.button("📥 Inserir Dados"): st.session_state.pagina = "📥 Inserir Dados"
     if st.button("🧪 Avaliação de Lote (QC)"): st.session_state.pagina = "🧪 Avaliação de Lote"
