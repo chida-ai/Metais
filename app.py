@@ -47,7 +47,6 @@ if "pagina" not in st.session_state: st.session_state["pagina"] = "📥 Inserir 
 
 # --- SIDEBAR COM LOGO ---
 with st.sidebar:
-    # Busca o logo na pasta assets
     LOGO_PATH = Path("assets/operalab_logo.png")
     if LOGO_PATH.exists():
         st.image(str(LOGO_PATH), use_container_width=True)
@@ -56,7 +55,7 @@ with st.sidebar:
         <div style="text-align: left; margin-bottom: 25px;">
             <h2 style="margin:0; font-size: 24px; color: #FFFFFF;">Data Support</h2>
             <div style="height:3px; background:#FF0000; width:100%; margin-top:2px;"></div>
-            <p style="color: #FF0000; font-size: 12px; font-weight: bold; margin-top:4px;">LAB AMBIENTAL</p>
+            <p style="color: #FF0000; font-size: 11px; font-weight: bold; margin-top:4px;">LAB AMBIENTAL</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -74,24 +73,27 @@ if st.session_state.pagina == "📥 Inserir Dados":
         if pasted:
             df = pd.read_csv(io.StringIO(pasted), sep=None, engine='python')
             df['V_num'], _ = zip(*df['Valor'].map(parse_val))
+            # Identifica se é ug e converte para mg
             df['V_padrao'] = df.apply(lambda r: r['V_num']/1000 if 'ug' in str(r['Unidade de Medida']).lower() else r['V_num'], axis=1)
             df['key_busca'] = df['Análise'].map(limpar_texto)
             st.session_state["df_global"] = df
-            st.success("Dados carregados e padronizados!")
+            st.success("Dados carregados e convertidos para mg/L ou mg/kg.")
 
 elif st.session_state.pagina == "🧪 Avaliação de Lote":
-    st.title("🧪 Avaliação Técnica (D vs T)")
+    st.title("🧪 Avaliação Técnica (Dissolvido vs Total)")
     df = st.session_state["df_global"]
     if df is None: st.warning("Aguardando dados...")
     else:
+        # Filtra por Método de Análise
         D = df[df['Método de Análise'].str.contains('Dissolvidos|Dissolvido', case=False, na=False)].copy()
         T = df[df['Método de Análise'].str.contains('Totais|Total', case=False, na=False)].copy()
+        
         if not D.empty and not T.empty:
             m = pd.merge(D, T, on=['Id', 'key_busca'], suffixes=('_diss', '_tot'))
-            # REGRA: Dissolvido > Total = Não Conforme
             m['Status'] = np.where(m['V_padrao_diss'] > m['V_padrao_tot'], "❌ NÃO CONFORME (D > T)", "✅ OK")
             res = m[['Id', 'Análise_diss', 'V_padrao_diss', 'V_padrao_tot', 'Status']]
-            res.columns = ['ID', 'Analito', 'Conc. Diss (mg)', 'Conc. Total (mg)', 'Avaliação']
+            # ATENÇÃO ÀS UNIDADES NA TABELA
+            res.columns = ['ID Amostra', 'Analito', 'Conc. Diss (mg)', 'Conc. Total (mg)', 'Avaliação']
             st.dataframe(res, use_container_width=True)
         else: st.info("Não foram encontrados pares de Dissolvido/Total para este lote.")
 
@@ -107,12 +109,13 @@ elif st.session_state.pagina == "⚖️ Legislação & U":
             df_leg = df.copy()
             df_leg['Limite'] = df_leg['key_busca'].map(limites_limpos)
             df_leg = df_leg.dropna(subset=['Limite'])
+            
             if df_leg.empty:
                 st.error("Nenhum analito bateu com os nomes desta legislação.")
             else:
                 df_leg['Status'] = np.where(df_leg['V_padrao'] > df_leg['Limite'], "❌ REPROVADO", "✅ OK")
                 res = df_leg[['Id', 'Análise', 'V_padrao', 'Limite', 'Status']]
-                res.columns = ['ID', 'Analito', 'Resultado (mg)', 'VMP (mg)', 'Parecer']
+                res.columns = ['ID Amostra', 'Analito', 'Resultado (mg)', 'VMP (mg)', 'Parecer']
                 st.dataframe(res, use_container_width=True)
 
 elif st.session_state.pagina == "👥 Duplicatas":
@@ -124,12 +127,15 @@ elif st.session_state.pagina == "👥 Duplicatas":
         c1, c2 = st.columns(2)
         a1 = c1.selectbox("Amostra Original", amostras)
         a2 = c2.selectbox("Duplicata", amostras)
+        
         if a1 and a2:
             d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_padrao', 'Análise']]
             d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_padrao']]
             comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
+            
             comp['RPD (%)'] = (abs(comp['V_padrao_Ori'] - comp['V_padrao_Dup']) / ((comp['V_padrao_Ori'] + comp['V_padrao_Dup'])/2)) * 100
             comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
+            
             res = comp[['Análise', 'V_padrao_Ori', 'V_padrao_Dup', 'RPD (%)', 'Status']]
             res.columns = ['Analito', 'Original (mg)', 'Duplicata (mg)', 'RPD (%)', 'Situação']
             st.dataframe(res, use_container_width=True)
