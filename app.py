@@ -43,7 +43,7 @@ with st.sidebar:
 
 if st.session_state.pagina == "📥 Inserir Dados":
     st.title("📥 Entrada de Dados (LIMS)")
-    pasted = st.text_area("Cole os dados aqui", height=250)
+    pasted = st.text_area("Cole os dados aqui (Colunas: Id, Nº Amostra, Análise, Método de Análise, Valor, Unidade de Medida)", height=250)
     if st.button("Processar Dados", type="primary"):
         df = pd.read_csv(io.StringIO(pasted), sep=None, engine='python')
         df['V_num'], _ = zip(*df['Valor'].map(parse_val))
@@ -57,15 +57,22 @@ elif st.session_state.pagina == "🧪 Avaliação de Lote":
     df = st.session_state["df_global"]
     
     if df is not None:
-        # 1. QC ÍTRIO
-        qc_itrio = df[df['key_busca'].str.contains('itrio', na=False)]
+        # 1. QC ÍTRIO (Regra 70-130%)
+        qc_itrio = df[df['key_busca'].str.contains('itrio', na=False)].copy()
         if not qc_itrio.empty:
             st.subheader("🔍 1. Controle de Qualidade (Ítrio)")
-            st.dataframe(qc_itrio[['Id', 'Análise', 'Valor', 'Unidade de Medida']], use_container_width=True)
+            # Aplicando a regra técnica
+            qc_itrio['Status QC'] = qc_itrio['V_num'].apply(lambda x: "✅ CONFORME" if 70 <= x <= 130 else "❌ NÃO CONFORME")
+            
+            res_itrio = qc_itrio[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'Status QC']]
+            st.dataframe(res_itrio, use_container_width=True)
+            
+            if any(qc_itrio['Status QC'] == "❌ NÃO CONFORME"):
+                st.error("Atenção: Existem recuperações de Ítrio fora do intervalo de 70-130%!")
 
         st.divider()
 
-        # 2. COMPARATIVO D vs T (Removendo o Ítrio)
+        # 2. COMPARATIVO D vs T (Excluindo Ítrio)
         df_analitos = df[~df['key_busca'].str.contains('itrio', na=False)].copy()
         D = df_analitos[df_analitos['Método de Análise'].str.contains('Diss', case=False, na=False)].copy()
         T = df_analitos[df_analitos['Método de Análise'].str.contains('Tot', case=False, na=False)].copy()
@@ -73,6 +80,7 @@ elif st.session_state.pagina == "🧪 Avaliação de Lote":
         if not D.empty and not T.empty:
             st.subheader("📊 2. Comparação Metais (Dissolvido vs Total)")
             m = pd.merge(D, T, on=['Id', 'key_busca'], suffixes=('_D', '_T'))
+            # Critério: D não pode ser maior que T (com margem de 5% de variabilidade analítica)
             m['Status'] = np.where(m['V_calculo_mg_D'] > (m['V_calculo_mg_T'] * 1.05), "❌ D > T", "✅ OK")
             
             for id_amostra in m['Id'].unique():
@@ -84,36 +92,34 @@ elif st.session_state.pagina == "🧪 Avaliação de Lote":
 
         st.divider()
 
-        # 3. DUPLICATAS (RPD) - AGORA DENTRO DA AVALIAÇÃO DE LOTE
+        # 3. DUPLICATAS (RPD)
         st.subheader("👥 3. Controle de Precisão (RPD)")
         amostras_list = sorted(df['Nº Amostra'].dropna().unique())
         
         if len(amostras_list) >= 2:
-            with st.container():
-                c1, c2, c3 = st.columns(3)
-                a1 = c1.selectbox("Amostra Original", amostras_list)
-                a2 = c2.selectbox("Duplicata", amostras_list)
-                limite_rpd = c3.number_input("Limite RPD (%)", value=20)
+            c1, c2, c3 = st.columns(3)
+            a1 = c1.selectbox("Amostra Original", amostras_list)
+            a2 = c2.selectbox("Duplicata", amostras_list)
+            limite_rpd = c3.number_input("Limite RPD (%)", value=20)
 
-                if a1 != a2:
-                    d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
-                    d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+            if a1 != a2:
+                d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
+                d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+                
+                comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
+                if not comp.empty:
+                    comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / 
+                                      ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
+                    comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= limite_rpd else "❌ FALHA")
                     
-                    comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
-                    if not comp.empty:
-                        comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / 
-                                          ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
-                        comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= limite_rpd else "❌ FALHA")
-                        
-                        st.dataframe(comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']], use_container_width=True)
-                    else:
-                        st.info("Nenhum parâmetro em comum para calcular RPD.")
+                    st.dataframe(comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']], use_container_width=True)
                 else:
-                    st.warning("Selecione amostras diferentes para o cálculo de RPD.")
+                    st.info("Nenhum parâmetro em comum para calcular RPD.")
         else:
-            st.info("Necessário pelo menos 2 números de amostras diferentes para avaliar duplicatas.")
+            st.info("Necessário colunas com 'Nº Amostra' diferentes para avaliar duplicatas.")
 
 elif st.session_state.pagina == "⚖️ Legislação":
+    # (Mantido conforme versão anterior)
     st.title("⚖️ Conformidade Legal")
     catalog = load_catalog()
     df = st.session_state["df_global"]
