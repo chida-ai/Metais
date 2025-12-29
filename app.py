@@ -110,16 +110,52 @@ elif st.session_state.pagina == "⚖️ Legislação":
 elif st.session_state.pagina == "👥 Duplicatas":
     st.title("👥 Controle de Precisão (RPD)")
     df = st.session_state["df_global"]
-    if df is not None:
-        amostras = df['Nº Amostra'].dropna().unique()
-        c1, c2 = st.columns(2)
-        a1 = c1.selectbox("Amostra Original", amostras)
-        a2 = c2.selectbox("Duplicata", amostras)
-        if a1 and a2:
-            d1 = df[df['Nº Amostra'] == a1][['key_busca', 'V_calculo_mg', 'Análise', 'Valor', 'Unidade de Medida']]
-            d2 = df[df['Nº Amostra'] == a2][['key_busca', 'V_calculo_mg', 'Valor', 'Unidade de Medida']]
+    
+    if df is None: 
+        st.warning("Aguardando dados...")
+    else:
+        # Interface de Configuração
+        with st.expander("⚙️ Configurações do Controle de Qualidade", expanded=True):
+            c1, c2, c3 = st.columns([1, 1, 1])
+            amostras = sorted(df['Nº Amostra'].dropna().unique())
+            
+            orig = c1.selectbox("Selecione a Amostra ORIGINAL", amostras)
+            dupl = c2.selectbox("Selecione a Amostra DUPLICATA", amostras)
+            limite_rpd = c3.number_input("Limite Máximo Aceitável de RPD (%)", value=20, step=5)
+
+        if orig == dupl:
+            st.error("⚠️ Selecione amostras diferentes para comparar.")
+        else:
+            # Filtragem e Cruzamento
+            d1 = df[df['Nº Amostra'] == orig][['key_busca', 'Análise', 'Valor', 'Unidade de Medida', 'V_calculo_mg']]
+            d2 = df[df['Nº Amostra'] == dupl][['key_busca', 'Valor', 'Unidade de Medida', 'V_calculo_mg']]
+            
             comp = pd.merge(d1, d2, on='key_busca', suffixes=('_Ori', '_Dup'))
-            comp['RPD (%)'] = (abs(comp['V_calculo_mg_Ori'] - comp['V_calculo_mg_Dup']) / ((comp['V_calculo_mg_Ori'] + comp['V_calculo_mg_Dup'])/2)) * 100
-            comp['Status'] = comp['RPD (%)'].apply(lambda x: "✅ OK" if x <= 20 else "❌ FALHA")
-            res = comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Status']]
-            st.dataframe(res, use_container_width=True)
+            
+            if comp.empty:
+                st.info("Não foram encontrados analitos em comum entre estas duas amostras.")
+            else:
+                # Cálculo do RPD
+                # Fórmula: |V1 - V2| / ((V1 + V2)/2) * 100
+                comp['RPD (%)'] = comp.apply(
+                    lambda x: (abs(x['V_calculo_mg_Ori'] - x['V_calculo_mg_Dup']) / 
+                              ((x['V_calculo_mg_Ori'] + x['V_calculo_mg_Dup']) / 2)) * 100 
+                    if (x['V_calculo_mg_Ori'] + x['V_calculo_mg_Dup']) > 0 else 0, axis=1
+                )
+                
+                comp['Situação'] = comp['RPD (%)'].apply(lambda x: "✅ DENTRO" if x <= limite_rpd else "❌ FALHA")
+                
+                # Exibição
+                st.subheader(f"📊 Resultado: Amostra {orig} vs {dupl}")
+                
+                # Resumo Final do RPD
+                falhas = comp[comp['Situação'] == "❌ FALHA"].shape[0]
+                if falhas == 0:
+                    st.success(f"Controle de Qualidade aprovado para o par selecionado (Limite: {limite_rpd}%)")
+                else:
+                    st.error(f"Controle de Qualidade falhou em {falhas} analito(s) (Limite: {limite_rpd}%)")
+
+                res = comp[['Análise', 'Valor_Ori', 'Unidade de Medida_Ori', 'Valor_Dup', 'Unidade de Medida_Dup', 'RPD (%)', 'Situação']]
+                res.columns = ['Analito', f'Valor ({orig})', 'Unid.', f'Valor ({dupl})', 'Unid.', 'RPD %', 'Resultado']
+                
+                st.dataframe(res.style.format({'RPD %': '{:.2f}'}), use_container_width=True)
