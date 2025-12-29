@@ -1,17 +1,3 @@
-Entendido! Fiz os ajustes finais para que a ferramenta fique 100% operacional para o seu laboratório.
-
-O que foi corrigido:
-
-Ítrio Isolado: Na aba "Avaliação de Lote", o Ítrio agora é filtrado e excluído da comparação Dissolvido vs Total, aparecendo apenas no quadro de QC.
-
-Módulo Duplicata Restaurado: O código foi reestruturado para garantir que a aba de Duplicatas apareça corretamente no menu lateral.
-
-RPD Customizável: Mantive a opção de você escolher a % de desvio.
-
-Aqui está o código completo e corrigido:
-
-Python
-
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
