@@ -1,30 +1,56 @@
-# operalab_validador_metais
+# OPERALAB – Sistema de Avaliação de Resultados
 
-Validador online de **Metais Dissolvidos vs Totais** com **QC Ítrio (70–130%)**, feito em Streamlit.
+O **OPERALAB** é um sistema profissional desenvolvido em **Python + Streamlit** para avaliação automatizada de resultados laboratoriais ambientais.  
+Ele unifica o melhor das versões anteriores do sistema, agora com uma arquitetura modular, robusta e fácil de manter.
 
-## Como publicar (Streamlit Community Cloud)
-1. Crie um repositório GitHub com estes arquivos (`app.py`, `requirements.txt`, `README.md`).
-2. Acesse o painel **Streamlit Community Cloud** e conecte seu GitHub.
-3. Clique em **Create app**, selecione seu repositório e o arquivo principal `app.py`.
-4. Clique em **Deploy** e pegue a URL pública.
+---
 
-Referências oficiais:
-- Guia de deploy: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app
-- Quickstart (Cloud): https://github.com/streamlit/docs/blob/main/content/deploy/community-cloud/get-started/quickstart.md
+## 🚀 Funcionalidades Principais
 
-## Como publicar (Hugging Face Spaces)
-1. Crie um Space (SDK **Streamlit**).
-2. Suba `app.py` e `requirements.txt`.
-3. Aguarde o build e use a URL do Space.
+### **1. Comparação Dissolvido vs Total**
+- Conversão de unidades totalmente robusta (mg/L, µg/L, μg/L, ug/L)
+- Tratamento de valores censurados (<LQ)
+- Avaliação automática:
+  - **OK**
+  - **NÃO CONFORME**
+  - **POTENCIAL NÃO CONFORME**
+  - **INCONCLUSIVO**
+- Status por ID e status global do lote
 
-Documentação Spaces (Streamlit): https://huggingface.co/docs/hub/en/spaces-sdks-streamlit
+---
 
-## Uso
-- Cole dados ou envie **CSV/Excel** com cabeçalhos: `Id, Nº Amostra, Método de Análise, Análise, Valor, Unidade de Medida, (opcional) LQ - Limite Quantificação`.
-- Clique **Avaliar Lote**.
-- Veja status do lote, tabelas e baixe CSVs.
+### **2. QC Ítrio (70–130%)**
+- Detecção automática de linhas de Ítrio
+- Avaliação de recuperação (%)
+- Status por ID
+- Integração com o status final do lote
 
-## Critérios
-- **NÃO CONFORME**: Dissolvido > Total.
-- **POTENCIAL NÃO CONFORME**: Total < LQ e Dissolvido > LQ(Total).
-- **QC Ítrio**: OK se 70–130%; fora disso = NÃO CONFORME.
+---
+
+### **3. Comparação de Duplicatas (%RPD)**
+- Cálculo automático de %RPD
+- Tratamento de censura
+- Exclusão automática de unidades em %
+- Avaliação conforme tolerância configurável
+
+---
+
+### **4. Avaliação por Legislação / Especificação**
+- Compatível com catálogo JSON externo
+- Aliases para analitos (Cr+6, Cr VI, etc.)
+- Seleção automática entre Totais e Dissolvidos
+- Tabela detalhada + resumo por ID
+
+---
+
+### **5. Interface Moderna**
+- Layout profissional com logo
+- Abas organizadas
+- Upload de arquivos ou colagem direta
+- Exportação de resultados em CSV
+- Estilização por severidade (cores)
+
+---
+
+## 🧱 Arquitetura do Projeto
+
