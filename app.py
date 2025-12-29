@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -60,7 +60,7 @@ if st.session_state.pagina == "📥 Inserir Dados":
     if st.button("Processar Dados", type="primary"):
         df = pd.read_csv(io.StringIO(pasted), sep=None, engine='python')
         df['V_num'], _ = zip(*df['Valor'].map(parse_val))
-        # Normalização interna para mg (apenas para cálculo), mas mantém original para exibição
+        # Cálculo interno em mg, mas preservamos a visualização original
         df['V_calculo_mg'] = df.apply(lambda r: r['V_num']/1000 if 'ug' in str(r['Unidade de Medida']).lower() else r['V_num'], axis=1)
         df['key_busca'] = df['Análise'].map(limpar_texto)
         st.session_state["df_global"] = df
@@ -74,7 +74,6 @@ elif st.session_state.pagina == "🧪 Avaliação de Lote":
         T = df[df['Método de Análise'].str.contains('Tot', case=False, na=False)].copy()
         if not D.empty and not T.empty:
             m = pd.merge(D, T, on=['Id', 'key_busca'], suffixes=('_D', '_T'))
-            # Comparação sempre em mg para não errar unidade
             m['Status'] = np.where(m['V_calculo_mg_D'] > m['V_calculo_mg_T'], "❌ NÃO CONFORME", "✅ OK")
             res = m[['Id', 'Análise_D', 'Valor_D', 'Unidade de Medida_D', 'Valor_T', 'Unidade de Medida_T', 'Status']]
             res.columns = ['ID', 'Analito', 'Valor D', 'Unid D', 'Valor T', 'Unid T', 'Status']
@@ -87,15 +86,20 @@ elif st.session_state.pagina == "⚖️ Legislação":
     if df is not None:
         escolha = st.selectbox("Selecione a Legislação:", list(catalog.keys()))
         limites = {limpar_texto(k): v for k, v in catalog[escolha]['limits_mgL'].items()}
+        
         df_l = df.copy()
         df_l['VMP_Legislação'] = df_l['key_busca'].map(limites)
-        df_l = df_l.dropna(subset=['VMP_Legislação'])
         
-        # O sistema compara o valor normalizado com o limite da legislação (que está em mg)
+        # Define a unidade da legislação baseado no nome da norma (Solo = mg/kg, Água/Efluente = mg/L)
+        unid_leg = "mg/kg" if "Solo" in escolha or "Resíduos" in escolha else "mg/L"
+        df_l['Unid_Leg'] = unid_leg
+        
+        df_l = df_l.dropna(subset=['VMP_Legislação'])
         df_l['Parecer'] = np.where(df_l['V_calculo_mg'] > df_l['VMP_Legislação'], "❌ REPROVADO", "✅ OK")
         
-        res = df_l[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'VMP_Legislação', 'Parecer']]
-        res.columns = ['ID', 'Analito', 'Valor LIMS', 'Unid LIMS', 'VMP (mg)', 'Parecer']
+        # Tabela com as unidades do LIMS e da Legislação lado a lado
+        res = df_l[['Id', 'Análise', 'Valor', 'Unidade de Medida', 'VMP_Legislação', 'Unid_Leg', 'Parecer']]
+        res.columns = ['ID', 'Analito', 'Valor LIMS', 'Unid LIMS', 'VMP (mg)', 'Unid Leg.', 'Parecer']
         st.dataframe(res, use_container_width=True)
 
 elif st.session_state.pagina == "👥 Duplicatas":
